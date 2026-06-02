@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SkillHub — 社内Skillsダッシュボード</title>
+<style>
+:root{ color-scheme: light;
+  --bg:#f6f7f9; --card:#ffffff; --ink:#1c2430; --muted:#5e6b7b; --line:#e4e8ee;
+  --brand:#3b5bdb; --brand-soft:#eef2ff;
+  --fresh:#1f9d55; --fresh-bg:#e7f6ee; --stale:#c98a00; --stale-bg:#fbf3df;
+  --update:#d63939; --update-bg:#fceaea; --shadow:0 1px 3px rgba(20,30,50,.07);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  background:var(--bg);color:var(--ink);line-height:1.6;font-size:14px}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 24px;
+  display:flex;align-items:center;gap:18px;position:sticky;top:0;z-index:20}
+.logo{font-weight:800;font-size:18px;color:var(--brand);letter-spacing:.5px}
+nav{display:flex;gap:4px;margin-left:8px}
+nav button{border:0;background:none;padding:8px 14px;border-radius:8px;cursor:pointer;
+  font-size:13px;color:var(--muted);font-weight:600}
+nav button.active{background:var(--brand-soft);color:var(--brand)}
+main{max-width:1080px;margin:0 auto;padding:22px}
+.view{display:none}.view.show{display:block}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+.stat .n{font-size:24px;font-weight:800}
+.stat .l{font-size:12px;color:var(--muted)}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+input,select{font:inherit;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+input[type=text]{flex:1;min-width:200px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;
+  box-shadow:var(--shadow);cursor:pointer;transition:transform .08s,box-shadow .08s}
+.card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(20,30,50,.10)}
+.card h3{margin:0 0 6px;font-size:15px}
+.card p{margin:0 0 12px;color:var(--muted);font-size:13px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tag{background:var(--brand-soft);color:var(--brand);font-size:11px;padding:2px 9px;border-radius:20px;font-weight:600}
+.meta{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
+.badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px}
+.b-fresh{background:var(--fresh-bg);color:var(--fresh)}
+.b-stale{background:var(--stale-bg);color:var(--stale)}
+.b-update{background:var(--update-bg);color:var(--update)}
+.score{font-weight:700;color:var(--ink)}
+.engage{display:flex;gap:12px;font-size:12px;color:var(--muted)}
+/* detail */
+.back{background:none;border:0;color:var(--brand);cursor:pointer;font-weight:600;padding:0;margin-bottom:14px;font-size:13px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px}
+.panel h2{margin:0 0 4px}
+.kv{display:flex;gap:24px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin:10px 0}
+pre{background:#0d1117;color:#d5dae3;padding:14px;border-radius:10px;overflow:auto;font-size:12.5px;line-height:1.5}
+.diff .add{color:#7ee787}.diff .del{color:#ff9a9a}
+.btn{background:var(--brand);color:#fff;border:0;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px}
+.btn.ghost{background:var(--brand-soft);color:var(--brand)}
+.btn.mut{background:#eef0f3;color:var(--muted)}
+.vote-row{display:flex;gap:10px;align-items:center;margin:8px 0 4px}
+.comment{border-top:1px solid var(--line);padding:10px 0;font-size:13px}
+.comment .who{font-weight:600;font-size:12px;color:var(--muted)}
+.scorebar{height:7px;background:#eef0f3;border-radius:6px;overflow:hidden;margin-top:3px}
+.scorebar>i{display:block;height:100%;background:var(--brand)}
+.row-sb{display:flex;justify-content:space-between;font-size:12px;margin-top:8px}
+/* search */
+.search-hero{text-align:center;padding:24px 0 8px}
+.search-hero input{max-width:560px;margin:14px auto 0;display:block;font-size:15px;padding:12px 16px}
+.chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--muted)}
+.compose{border-left:3px solid var(--brand);background:var(--brand-soft);padding:12px 14px;border-radius:8px;margin-top:12px;font-size:13px}
+/* suggestions */
+.sug{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow);margin-bottom:12px}
+.sug-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.stype{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase}
+.s-merge{background:#efe7fb;color:#7048c9}.s-improve{background:var(--brand-soft);color:var(--brand)}
+.s-compose{background:#e6f6f3;color:#0c9488}.s-update{background:var(--update-bg);color:var(--update)}
+.empty{text-align:center;color:var(--muted);padding:40px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+  padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:50}
+.toast.show{opacity:1}
+@media(max-width:640px){.summary{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">SkillHub</span>
+  <nav>
+    <button data-v="dash" class="active">ダッシュボード</button>
+    <button data-v="search">検索</button>
+    <button data-v="suggest">提案レビュー</button>
+  </nav>
+</header>
+<main>
+  <!-- DASHBOARD -->
+  <section id="dash" class="view show">
+    <div class="summary" id="summary"></div>
+    <div class="toolbar">
+      <input type="text" id="q" placeholder="名前・説明・タグで絞り込み">
+      <select id="fStatus"><option value="">鮮度: すべて</option><option value="fresh">fresh</option><option value="stale">stale</option><option value="needs_update">needs_update</option></select>
+      <select id="fTag"><option value="">タグ: すべて</option></select>
+      <select id="sort"><option value="score">品質スコア順</option><option value="updated">更新日順</option><option value="votes">投票数順</option></select>
+    </div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <!-- DETAIL -->
+  <section id="detail" class="view"></section>
+
+  <!-- SEARCH -->
+  <section id="search" class="view">
+    <div class="search-hero">
+      <h2>自然言語でSkillsを探す</h2>
+      <p style="color:var(--muted)">やりたいことを文章で入力してください。最適なSkillと組み合わせ案を提示します。</p>
+      <input type="text" id="nlq" placeholder="例: 議事録を要約して担当者別のタスクに分けたい">
+      <div class="chips" id="chips"></div>
+    </div>
+    <div id="nlResult"></div>
+  </section>
+
+  <!-- SUGGESTIONS -->
+  <section id="suggest" class="view">
+    <h2 style="margin-top:0">エージェントからの提案</h2>
+    <div id="sugList"></div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- mock data ----------
+const REPO_BASE="https://github.com/example-corp/";
+const skills = [
+  {id:"s1",name:"議事録要約",description:"会議の議事録テキストを受け取り、決定事項・論点・ネクストアクションを構造化して要約する。",source_repo:"ai-tools/skills",source_path:"summarize-minutes/SKILL.md",author:"yamada",tags:["要約","会議","NLP"],last_updated:"2026-05-28",freshness_status:"fresh",quality_score:88,
+    usage:"議事録の生テキストを渡すと、Markdownの要約と論点リストを返します。`/summarize-minutes` で呼び出し。",
+    breakdown:{description:90,trigger:85,annotation:88}},
+  {id:"s2",name:"タスク抽出",description:"文章中からアクションアイテムを抽出し、担当者・期限・優先度を推定して一覧化する。",source_repo:"ai-tools/skills",source_path:"extract-tasks/SKILL.md",author:"suzuki",tags:["タスク","会議","抽出"],last_updated:"2026-05-20",freshness_status:"fresh",quality_score:82,
+    usage:"自由文を渡すと担当者別にタスクを分解して返します。議事録要約と組み合わせると効果的。",
+    breakdown:{description:84,trigger:80,annotation:82}},
+  {id:"s3",name:"データカタログ取得",description:"社内データカタログAPIを叩いてテーブル定義・カラム情報を取得し整形して返す。",source_repo:"data-platform/repo",source_path:"skills/data-catalog/SKILL.md",author:"sato",tags:["データ","API","社内"],last_updated:"2026-03-10",freshness_status:"needs_update",quality_score:71,
+    usage:"テーブル名を渡すとスキーマ定義を返します。※参照先APIの仕様変更により要更新。",
+    breakdown:{description:78,trigger:70,annotation:65}},
+  {id:"s4",name:"コードレビュー観点",description:"PRの差分に対して社内のレビュー観点チェックリストを当て、指摘候補を生成する。",source_repo:"dev/code-skills",source_path:"review-checklist/SKILL.md",author:"tanaka",tags:["コード","レビュー","品質"],last_updated:"2026-04-15",freshness_status:"stale",quality_score:76,
+    usage:"diffを渡すと観点別に指摘を返します。観点リストの更新が3週間止まっています。",
+    breakdown:{description:80,trigger:74,annotation:74}},
+  {id:"s5",name:"議事録サマリ作成",description:"ミーティングのメモから要点をまとめ、共有用の短い要約文を作る。",source_repo:"personal/horikoshi",source_path:"minutes-summary/SKILL.md",author:"horikoshi",tags:["要約","会議"],last_updated:"2026-02-02",freshness_status:"stale",quality_score:63,
+    usage:"メモを渡すと3行要約を返します。議事録要約Skillと機能が重複している可能性。",
+    breakdown:{description:66,trigger:60,annotation:63}},
+  {id:"s6",name:"Slack通知整形",description:"任意のテキストをSlack向けのブロック形式に整形し、見やすい通知を生成する。",source_repo:"ai-tools/skills",source_path:"slack-format/SKILL.md",author:"kimura",tags:["Slack","通知","整形"],last_updated:"2026-05-30",freshness_status:"fresh",quality_score:85,
+    usage:"本文と宛先を渡すとSlackブロックJSONを返します。",
+    breakdown:{description:88,trigger:86,annotation:81}},
+];
+let votes = {s1:9,s2:6,s3:4,s4:5,s5:1,s6:7};
+let comments = {
+  s1:[{who:"tanaka",body:"出力のタスク粒度を調整したい場面があった。"}],
+  s3:[{who:"sato",body:"API変更で落ちるようになった。修正提案がほしい。"}],
+  s5:[]
+};
+let suggestions = [
+  {id:"g1",type:"merge",skill_ids:["s5","s1"],status:"open",content:"「議事録サマリ作成」は「議事録要約」と機能が重複しています。後者へ統合し、3行要約モードをオプションとして取り込むことを提案します。"},
+  {id:"g2",type:"update",skill_ids:["s3"],status:"open",content:"参照先データカタログAPIのエンドポイント変更を検知しました。下記diffを適用すると復旧します。",
+    diff:[["del","- const url = `${BASE}/v1/tables/${name}`;"],["add","+ const url = `${BASE}/v2/catalog/tables/${name}`;"],["del","- return res.data.schema;"],["add","+ return res.data.table.schema;"]]},
+  {id:"g3",type:"compose",skill_ids:["s1","s2"],status:"open",content:"「議事録要約」→「タスク抽出」を連結したワークフローを提案します。議事録から要約と担当者別タスクを一括生成できます。"},
+  {id:"g4",type:"improve",skill_ids:["s4"],status:"open",content:"descriptionにトリガー条件が不足しています。下記の追記を提案します。",
+    diff:[["add","+ Use when reviewing a pull request diff and you need checklist-based comments."]]},
+];
+
+// ---------- helpers ----------
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const badge=s=>({fresh:["b-fresh","fresh"],stale:["b-stale","stale"],needs_update:["b-update","needs_update"]}[s]);
+const skillById=id=>skills.find(s=>s.id===id);
+const srcUrl=s=>REPO_BASE+s.source_repo+"/blob/main/"+(s.source_path||"");
+function srcLink(s){return `<a href="${srcUrl(s)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand);text-decoration:none">🔗 ${s.source_repo}</a>`;}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1800);}
+
+// ---------- nav ----------
+$$("nav button").forEach(b=>b.onclick=()=>show(b.dataset.v));
+function show(v){
+  $$("nav button").forEach(b=>b.classList.toggle("active",b.dataset.v===v));
+  $$(".view").forEach(x=>x.classList.remove("show"));
+  $("#"+v).classList.add("show");
+}
+
+// ---------- summary ----------
+function renderSummary(){
+  const dup=suggestions.filter(s=>s.type==="merge"&&s.status==="open").length;
+  const upd=skills.filter(s=>s.freshness_status==="needs_update").length;
+  const stale=skills.filter(s=>s.freshness_status==="stale").length;
+  $("#summary").innerHTML=[
+    [skills.length,"登録Skills"],[dup,"重複候補"],[upd,"要更新"],[stale,"陳腐化注意"]
+  ].map(([n,l])=>`<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+}
+
+// ---------- dashboard grid ----------
+function renderTagFilter(){
+  const tags=[...new Set(skills.flatMap(s=>s.tags))].sort();
+  $("#fTag").innerHTML='<option value="">タグ: すべて</option>'+tags.map(t=>`<option>${t}</option>`).join("");
+}
+function renderGrid(){
+  const q=$("#q").value.trim(),fs=$("#fStatus").value,ft=$("#fTag").value,sort=$("#sort").value;
+  let list=skills.filter(s=>{
+    const hay=(s.name+s.description+s.tags.join("")).toLowerCase();
+    return (!q||hay.includes(q.toLowerCase()))&&(!fs||s.freshness_status===fs)&&(!ft||s.tags.includes(ft));
+  });
+  list.sort((a,b)=> sort==="updated"? b.last_updated.localeCompare(a.last_updated)
+    : sort==="votes"? votes[b.id]-votes[a.id] : b.quality_score-a.quality_score);
+  $("#grid").innerHTML = list.length? list.map(s=>{
+    const[bc,bt]=badge(s.freshness_status);
+    return `<div class="card" onclick="openDetail('${s.id}')">
+      <div class="meta" style="margin-bottom:8px"><span class="badge ${bc}">${bt}</span><span class="score">★ ${s.quality_score}</span></div>
+      <h3>${s.name}</h3><p>${s.description}</p>
+      <div class="tags">${s.tags.map(t=>`<span class="tag">${t}</span>`).join("")}</div>
+      <div class="meta"><span>@${s.author}</span>
+        <span class="engage"><span>👍 ${votes[s.id]}</span><span>💬 ${(comments[s.id]||[]).length}</span></span></div>
+      <div class="meta" style="margin-top:8px">${srcLink(s)}</div>
+    </div>`;
+  }).join("") : '<div class="empty">該当するSkillsがありません。</div>';
+}
+["#q","#fStatus","#fTag","#sort"].forEach(s=>$(s).addEventListener("input",renderGrid));
+
+// ---------- detail ----------
+function openDetail(id){
+  const s=skillById(id);const[bc,bt]=badge(s.freshness_status);
+  const cs=comments[id]||[];
+  const sug=suggestions.filter(x=>x.skill_ids.includes(id)&&x.status==="open");
+  $("#detail").innerHTML=`
+    <button class="back" onclick="show('dash')">← 一覧へ戻る</button>
+    <div class="panel">
+      <div class="meta"><span class="badge ${bc}">${bt}</span><span class="score">品質スコア ★ ${s.quality_score}</span></div>
+      <h2>${s.name}</h2>
+      <div class="tags">${s.tags.map(t=>`<span class="tag">${t}</span>`).join("")}</div>
+      <p style="color:var(--muted)">${s.description}</p>
+      <div class="kv"><span>作者: @${s.author}</span><span>取得元: ${srcLink(s)}</span><span>最終更新: ${s.last_updated}</span></div>
+    </div>
+    <div class="panel"><h3 style="margin-top:0">使い方（自動生成）</h3><p>${s.usage}</p></div>
+    <div class="panel"><h3 style="margin-top:0">品質スコアの内訳</h3>
+      ${Object.entries({"説明の明確さ":s.breakdown.description,"トリガー精度":s.breakdown.trigger,"注釈の充実":s.breakdown.annotation}).map(([k,v])=>
+        `<div class="row-sb"><span>${k}</span><span>${v}</span></div><div class="scorebar"><i style="width:${v}%"></i></div>`).join("")}
+    </div>
+    ${sug.length?`<div class="panel"><h3 style="margin-top:0">エージェントの改善提案</h3>${sug.map(renderSugInline).join("")}</div>`:""}
+    <div class="panel">
+      <h3 style="margin-top:0">評価</h3>
+      <div class="vote-row">
+        <button class="btn ghost" onclick="vote('${id}')">👍 役に立った（${votes[id]}）</button>
+        <button class="btn mut" onclick="vote('${id}')">✓ 使った</button>
+      </div>
+      <div id="comments">${cs.map(c=>`<div class="comment"><div class="who">@${c.who}</div>${c.body}</div>`).join("")||'<p style="color:var(--muted)">まだコメントはありません。</p>'}</div>
+      <div class="vote-row"><input type="text" id="cIn" placeholder="コメントを追加" style="flex:1"><button class="btn" onclick="addComment('${id}')">投稿</button></div>
+    </div>`;
+  show("detail");window.scrollTo(0,0);
+}
+function vote(id){votes[id]++;toast("投票しました");openDetail(id);renderGrid();renderSummary();}
+function addComment(id){
+  const v=$("#cIn").value.trim();if(!v)return;
+  (comments[id]=comments[id]||[]).push({who:"horikoshi",body:v});
+  toast("コメントを投稿しました");openDetail(id);renderGrid();
+}
+
+// ---------- suggestion rendering ----------
+function diffHtml(d){return `<pre class="diff">${d.map(([t,l])=>`<span class="${t}">${l}</span>`).join("\n")}</pre>`;}
+function sugClass(t){return {merge:"s-merge",improve:"s-improve",compose:"s-compose",update:"s-update"}[t];}
+function renderSugInline(s){
+  return `<div style="margin-bottom:10px">
+    <span class="stype ${sugClass(s.type)}">${s.type}</span>
+    <p style="margin:8px 0">${s.content}</p>
+    ${s.diff?diffHtml(s.diff):""}
+    <div class="vote-row"><button class="btn" onclick="resolveSug('${s.id}','accepted')">採用</button>
+    <button class="btn mut" onclick="resolveSug('${s.id}','dismissed')">却下</button></div></div>`;
+}
+function renderSuggestions(){
+  const open=suggestions.filter(s=>s.status==="open");
+  $("#sugList").innerHTML= open.length? open.map(s=>{
+    const links=s.skill_ids.map(i=>skillById(i)).filter(Boolean).map(x=>srcLink(x)).join("、 ");
+    return `<div class="sug"><div class="sug-head"><span class="stype ${sugClass(s.type)}">${s.type}</span>
+      <span style="font-size:12px;color:var(--muted)">対象: ${links}</span></div>
+      <p>${s.content}</p>${s.diff?diffHtml(s.diff):""}
+      <div class="vote-row"><button class="btn" onclick="resolveSug('${s.id}','accepted')">採用</button>
+      <button class="btn mut" onclick="resolveSug('${s.id}','dismissed')">却下</button></div></div>`;
+  }).join("") : '<div class="empty">未処理の提案はありません。すべて対応済みです。</div>';
+}
+function resolveSug(id,st){
+  suggestions.find(s=>s.id===id).status=st;
+  toast(st==="accepted"?"提案を採用しました":"提案を却下しました");
+  renderSuggestions();renderSummary();
+  if($("#detail").classList.contains("show")){const open=$("#detail");/*refresh*/}
+}
+
+// ---------- NL search ----------
+const examples=["議事録を要約して担当者別のタスクに分けたい","データのテーブル定義を取得したい","PRのレビュー観点を出したい","Slackにきれいな通知を送りたい"];
+function renderChips(){$("#chips").innerHTML=examples.map(e=>`<span class="chip" onclick="runSearch('${e}')">${e}</span>`).join("");}
+function runSearch(text){
+  $("#nlq").value=text;
+  const t=text.toLowerCase();
+  const scored=skills.map(s=>{
+    let sc=0;[...s.tags,s.name,s.description].forEach(w=>{ if(t.includes("議事録")&&/要約|会議/.test(w))sc+=2; });
+    const kw=["議事録","タスク","担当","データ","テーブル","レビュー","コード","slack","通知","要約"];
+    kw.forEach(k=>{ if(t.includes(k)&&(s.name+s.description+s.tags.join("")).toLowerCase().includes(k))sc+=2;});
+    return{s,sc};
+  }).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,3);
+  let html="";
+  if(!scored.length){html='<div class="empty">該当するSkillsが見つかりませんでした。別の言い方を試してください。</div>';}
+  else{
+    html='<h3>最適なSkills</h3><div class="grid">'+scored.map(({s})=>{
+      const[bc,bt]=badge(s.freshness_status);
+      return `<div class="card" onclick="openDetail('${s.id}')"><div class="meta" style="margin-bottom:8px">
+        <span class="badge ${bc}">${bt}</span><span class="score">★ ${s.quality_score}</span></div>
+        <h3>${s.name}</h3><p>${s.description}</p></div>`;}).join("")+'</div>';
+    if(scored.length>=2){
+      html+=`<div class="compose"><strong>合成ワークフローの提案</strong><br>
+        ${scored.slice(0,2).map(x=>x.s.name).join(" → ")} を連結すると、この要求を一度に処理できます。</div>`;
+    }
+  }
+  $("#nlResult").innerHTML=html;
+}
+$("#nlq").addEventListener("keydown",e=>{if(e.key==="Enter")runSearch(e.target.value);});
+
+// ---------- init ----------
+renderSummary();renderTagFilter();renderGrid();renderSuggestions();renderChips();
+</script>
+</body>
+</html>
