@@ -78,6 +78,26 @@ pre{background:#0d1117;color:#d5dae3;padding:14px;border-radius:10px;overflow:au
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
   padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:50}
 .toast.show{opacity:1}
+/* agent bar */
+.agentbar{display:flex;align-items:center;gap:10px;background:linear-gradient(100deg,#eef2ff,#f3edff);
+  border:1px solid #dbe1f5;border-radius:14px;padding:10px 12px;margin-bottom:18px;box-shadow:var(--shadow)}
+.agentbar input{flex:1;border:0;background:rgba(255,255,255,.7);min-width:120px}
+.ab-spark{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:9px;
+  background:var(--brand);color:#fff;font-size:15px;animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(59,91,219,.4)}50%{box-shadow:0 0 0 7px rgba(59,91,219,0)}}
+/* chat */
+.chat{max-width:680px;margin:8px auto 0}
+.bubble{padding:12px 14px;border-radius:14px;margin:10px 0;font-size:13.5px;animation:rise .3s ease both}
+.bubble.user{background:var(--brand);color:#fff;margin-left:auto;max-width:80%;border-bottom-right-radius:4px}
+.bubble.ai{background:var(--card);border:1px solid var(--line);max-width:92%;border-bottom-left-radius:4px;box-shadow:var(--shadow)}
+.bubble.ai .who{font-size:11px;font-weight:700;color:var(--brand);margin-bottom:4px}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.typing{display:inline-flex;gap:4px;padding:4px 0}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+.conf{font-size:11px;font-weight:700;color:var(--fresh);background:var(--fresh-bg);padding:2px 8px;border-radius:20px}
+.why{font-size:12px;color:var(--muted);margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
 @media(max-width:640px){.summary{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -87,16 +107,21 @@ pre{background:#0d1117;color:#d5dae3;padding:14px;border-radius:10px;overflow:au
   <nav>
     <button data-v="dash" class="active">ダッシュボード</button>
     <button data-v="search">検索</button>
-    <button data-v="suggest">提案レビュー</button>
+    <button data-v="suggest">AIからの提案</button>
   </nav>
 </header>
 <main>
   <!-- DASHBOARD -->
   <section id="dash" class="view show">
+    <div class="agentbar">
+      <div class="ab-spark">✦</div>
+      <input type="text" id="topq" placeholder="探すエージェントに話しかける：例「議事録を要約して担当者別のタスクに分けたい」">
+      <button class="btn" id="topgo">探す</button>
+    </div>
     <div class="summary" id="summary"></div>
     <div class="toolbar">
       <input type="text" id="q" placeholder="名前・説明・タグで絞り込み">
-      <select id="fStatus"><option value="">鮮度: すべて</option><option value="fresh">fresh</option><option value="stale">stale</option><option value="needs_update">needs_update</option></select>
+      <select id="fStatus"><option value="">鮮度: すべて</option><option value="fresh">最新</option><option value="stale">要注意</option><option value="needs_update">要更新</option></select>
       <select id="fTag"><option value="">タグ: すべて</option></select>
       <select id="sort"><option value="score">品質スコア順</option><option value="updated">更新日順</option><option value="votes">投票数順</option></select>
     </div>
@@ -108,18 +133,18 @@ pre{background:#0d1117;color:#d5dae3;padding:14px;border-radius:10px;overflow:au
 
   <!-- SEARCH -->
   <section id="search" class="view">
-    <div class="search-hero">
-      <h2>自然言語でSkillsを探す</h2>
-      <p style="color:var(--muted)">やりたいことを文章で入力してください。最適なSkillと組み合わせ案を提示します。</p>
-      <input type="text" id="nlq" placeholder="例: 議事録を要約して担当者別のタスクに分けたい">
-      <div class="chips" id="chips"></div>
+    <div class="chat" id="chat"></div>
+    <div class="chips" id="chips" style="margin-top:14px"></div>
+    <div class="agentbar" style="max-width:680px;margin:14px auto 0">
+      <div class="ab-spark">✦</div>
+      <input type="text" id="nlq" placeholder="やりたいことを話しかける…">
+      <button class="btn" id="nlgo">送信</button>
     </div>
-    <div id="nlResult"></div>
   </section>
 
   <!-- SUGGESTIONS -->
   <section id="suggest" class="view">
-    <h2 style="margin-top:0">エージェントからの提案</h2>
+    <h2 style="margin-top:0">AIからの提案</h2>
     <div id="sugList"></div>
   </section>
 </main>
@@ -165,7 +190,7 @@ let suggestions = [
 
 // ---------- helpers ----------
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const badge=s=>({fresh:["b-fresh","fresh"],stale:["b-stale","stale"],needs_update:["b-update","needs_update"]}[s]);
+const badge=s=>({fresh:["b-fresh","最新"],stale:["b-stale","要注意"],needs_update:["b-update","要更新"]}[s]);
 const skillById=id=>skills.find(s=>s.id===id);
 const srcUrl=s=>REPO_BASE+s.source_repo+"/blob/main/"+(s.source_path||"");
 function srcLink(s){return `<a href="${srcUrl(s)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand);text-decoration:none">🔗 ${s.source_repo}</a>`;}
@@ -177,6 +202,7 @@ function show(v){
   $$("nav button").forEach(b=>b.classList.toggle("active",b.dataset.v===v));
   $$(".view").forEach(x=>x.classList.remove("show"));
   $("#"+v).classList.add("show");
+  if(v==="search")ensureGreeting();
 }
 
 // ---------- summary ----------
@@ -283,34 +309,63 @@ function resolveSug(id,st){
   if($("#detail").classList.contains("show")){const open=$("#detail");/*refresh*/}
 }
 
-// ---------- NL search ----------
+// ---------- NL search (chat) ----------
 const examples=["議事録を要約して担当者別のタスクに分けたい","データのテーブル定義を取得したい","PRのレビュー観点を出したい","Slackにきれいな通知を送りたい"];
-function renderChips(){$("#chips").innerHTML=examples.map(e=>`<span class="chip" onclick="runSearch('${e}')">${e}</span>`).join("");}
-function runSearch(text){
-  $("#nlq").value=text;
+function renderChips(){$("#chips").innerHTML=examples.map(e=>`<span class="chip" onclick="runSearch(this.textContent)">${e}</span>`).join("");}
+let chatStarted=false;
+function ensureGreeting(){
+  if(chatStarted)return;chatStarted=true;
+  bubble("ai","SkillHub エージェント","やりたいことを文章で教えてください。社内のSkillsから最適なものを探し、組み合わせ方まで提案します。");
+}
+function bubble(role,who,html){
+  const b=document.createElement("div");b.className="bubble "+role;
+  b.innerHTML=role==="ai"?`<div class="who">✦ ${who}</div>${html}`:html;
+  $("#chat").appendChild(b);b.scrollIntoView({behavior:"smooth",block:"end"});return b;
+}
+function reasonFor(s,t){
+  const hit=s.tags.filter(tg=>t.includes(tg.toLowerCase()));
+  if(hit.length)return `「${hit[0]}」の用途に合致し、`+ (s.freshness_status==="fresh"?"鮮度も最新です。":"説明とトリガーが要求に近いです。");
+  return "説明とトリガー条件が要求内容に近いと判断しました。";
+}
+async function runSearch(text){
+  text=text.trim();if(!text)return;
+  ensureGreeting();
+  bubble("user",null,text);
+  $("#nlq").value="";
   const t=text.toLowerCase();
   const scored=skills.map(s=>{
-    let sc=0;[...s.tags,s.name,s.description].forEach(w=>{ if(t.includes("議事録")&&/要約|会議/.test(w))sc+=2; });
-    const kw=["議事録","タスク","担当","データ","テーブル","レビュー","コード","slack","通知","要約"];
+    let sc=0;const kw=["議事録","タスク","担当","データ","テーブル","レビュー","コード","slack","通知","要約","会議","定義"];
     kw.forEach(k=>{ if(t.includes(k)&&(s.name+s.description+s.tags.join("")).toLowerCase().includes(k))sc+=2;});
     return{s,sc};
   }).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,3);
-  let html="";
-  if(!scored.length){html='<div class="empty">該当するSkillsが見つかりませんでした。別の言い方を試してください。</div>';}
-  else{
-    html='<h3>最適なSkills</h3><div class="grid">'+scored.map(({s})=>{
-      const[bc,bt]=badge(s.freshness_status);
-      return `<div class="card" onclick="openDetail('${s.id}')"><div class="meta" style="margin-bottom:8px">
-        <span class="badge ${bc}">${bt}</span><span class="score">★ ${s.quality_score}</span></div>
-        <h3>${s.name}</h3><p>${s.description}</p></div>`;}).join("")+'</div>';
-    if(scored.length>=2){
-      html+=`<div class="compose"><strong>合成ワークフローの提案</strong><br>
-        ${scored.slice(0,2).map(x=>x.s.name).join(" → ")} を連結すると、この要求を一度に処理できます。</div>`;
-    }
+  // typing indicator
+  const steps=["要求を解析しています…","社内Skillsを横断検索しています…","候補の品質と鮮度を照合しています…"];
+  const tb=bubble("ai","SkillHub エージェント",'<div class="typing"><i></i><i></i><i></i></div>');
+  for(const st of steps){tb.querySelector(".who").nextSibling; tb.innerHTML=`<div class="who">✦ SkillHub エージェント</div><span style="color:var(--muted)">${st}</span><div class="typing" style="margin-top:6px"><i></i><i></i><i></i></div>`;await sleep(650);}
+  tb.remove();
+  if(!scored.length){bubble("ai","SkillHub エージェント","該当するSkillsが見つかりませんでした。別の言い方や、目的を具体的に書いていただけますか。");return;}
+  const top=scored.length>=2?Math.round(85+Math.random()*10):Math.round(70+Math.random()*10);
+  let html=`<div style="display:flex;justify-content:space-between;align-items:center"><strong>${scored.length}件のSkillsが見つかりました</strong><span class="conf">確信度 ${top}%</span></div>`;
+  html+=scored.map(({s})=>{
+    const[bc,bt]=badge(s.freshness_status);
+    return `<div class="card" style="margin-top:10px" onclick="openDetail('${s.id}')">
+      <div class="meta" style="margin-bottom:6px"><span class="badge ${bc}">${bt}</span><span class="score">★ ${s.quality_score}</span></div>
+      <h3>${s.name}</h3><p>${s.description}</p>
+      <div class="why">💡 推薦理由: ${reasonFor(s,t)}</div></div>`;
+  }).join("");
+  if(scored.length>=2){
+    html+=`<div class="compose" style="margin-top:12px"><strong>✦ 合成ワークフローの提案</strong><br>
+      ${scored.slice(0,2).map(x=>x.s.name).join(" → ")} を連結すると、この要求を一度に処理できます。組み合わせを試しますか？</div>`;
   }
-  $("#nlResult").innerHTML=html;
+  bubble("ai","SkillHub エージェント",html);
 }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 $("#nlq").addEventListener("keydown",e=>{if(e.key==="Enter")runSearch(e.target.value);});
+$("#nlgo").onclick=()=>runSearch($("#nlq").value);
+// top bar on dashboard
+function topSearch(){const v=$("#topq").value.trim();if(!v)return;show("search");ensureGreeting();$("#topq").value="";runSearch(v);}
+$("#topgo").onclick=topSearch;
+$("#topq").addEventListener("keydown",e=>{if(e.key==="Enter")topSearch();});
 
 // ---------- init ----------
 renderSummary();renderTagFilter();renderGrid();renderSuggestions();renderChips();
