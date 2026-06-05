@@ -1,4 +1,4 @@
-# SkillHub（仮称） — 社内Skillsダッシュボード
+# SkillsHub（仮称） — 社内Skillsダッシュボード
 
 ## 前提知識：Skillsとは何か
 

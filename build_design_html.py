@@ -1,0 +1,141 @@
+md = open('/Users/yuki/Desktop/ai-agent/DESIGN.md', encoding='utf-8').read()
+assert '</script' not in md.lower()
+
+TEMPLATE = r'''<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SkillsHub 設計書</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root{
+  --bg:#f5f7fa; --paper:#ffffff; --ink:#1d2733; --muted:#5d6b7b; --line:#e6eaef;
+  --brand:#3b5bdb; --brand-soft:#eef2ff; --code-bg:#0d1117; --code-ink:#d5dae3;
+  --th:#eef2f8; --shadow:0 1px 3px rgba(20,30,50,.06);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  line-height:1.9;font-size:16px;-webkit-font-smoothing:antialiased}
+.layout{display:flex;max-width:1320px;margin:0 auto;gap:32px;padding:0 22px}
+aside{position:sticky;top:0;align-self:flex-start;height:100vh;overflow:auto;
+  width:262px;flex:none;padding:28px 8px 48px;border-right:1px solid var(--line)}
+aside .title{font-weight:800;color:var(--brand);font-size:17px;margin:0 8px 18px;letter-spacing:.3px}
+aside a{display:block;color:var(--muted);text-decoration:none;font-size:13.5px;
+  padding:7px 11px;border-radius:8px;border-left:2px solid transparent}
+aside a:hover{background:var(--brand-soft);color:var(--brand)}
+aside a.active{background:var(--brand-soft);color:var(--brand);border-left-color:var(--brand);font-weight:700}
+main{flex:1;min-width:0;padding:38px 6px 140px}
+.doc{background:var(--paper);border:1px solid var(--line);border-radius:18px;
+  padding:46px 54px;box-shadow:var(--shadow)}
+h1{font-size:31px;margin:0 0 8px;letter-spacing:.3px}
+h2{font-size:23px;margin:52px 0 16px;padding-top:22px;border-top:2px solid var(--line)}
+h2:first-of-type{border-top:0;padding-top:0}
+h3{font-size:18.5px;margin:32px 0 10px;color:#26384b}
+h4{font-size:15px;margin:22px 0 8px;color:var(--brand)}
+p{margin:11px 0}
+a{color:var(--brand)}
+ul{margin:9px 0;padding-left:24px}
+li{margin:5px 0}
+code{background:#eef1f5;color:#274060;padding:2px 6px;border-radius:5px;
+  font-family:"SFMono-Regular",Consolas,Menlo,monospace;font-size:.85em}
+pre{background:var(--code-bg);color:var(--code-ink);padding:18px 20px;border-radius:13px;
+  overflow:auto;font-size:13.5px;line-height:1.65;margin:16px 0}
+pre code{background:none;color:inherit;padding:0;font-size:13.5px}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px;
+  border:1px solid var(--line);border-radius:11px;overflow:hidden}
+th,td{border:1px solid var(--line);padding:10px 13px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:700}
+tr:nth-child(even) td{background:#fafbfd}
+blockquote{margin:18px 0;padding:13px 18px;background:var(--brand-soft);
+  border-left:4px solid var(--brand);border-radius:0 11px 11px 0;color:#33415a;font-size:14px}
+blockquote p{margin:0}
+hr{display:none}
+pre.mermaid{position:relative;background:var(--paper);color:inherit;border:1px solid var(--line);
+  border-radius:14px;padding:26px;margin:20px 0;text-align:center;overflow:auto;cursor:zoom-in;
+  transition:box-shadow .15s,border-color .15s}
+pre.mermaid:hover{border-color:#c3ccf7;box-shadow:0 4px 18px rgba(59,91,219,.12)}
+pre.mermaid::after{content:"🔍 クリックで拡大";position:absolute;top:10px;right:12px;
+  font-size:11.5px;color:#fff;background:rgba(59,91,219,.92);padding:3px 10px;border-radius:20px;
+  opacity:0;transition:opacity .15s;pointer-events:none}
+pre.mermaid:hover::after{opacity:1}
+#lb{position:fixed;inset:0;background:rgba(13,20,30,.88);z-index:1000;display:none}
+#lb.open{display:flex;flex-direction:column}
+#lb .bar{flex:none;display:flex;gap:10px;justify-content:center;align-items:center;padding:12px;color:#fff}
+#lb .bar button{background:#2a3a55;color:#fff;border:0;height:42px;min-width:42px;padding:0 14px;
+  border-radius:10px;font-size:18px;cursor:pointer;font-weight:700}
+#lb .bar button:hover{background:var(--brand)}
+#lb .stage{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:24px}
+#lb .stage svg{transform-origin:top center;transition:transform .08s}
+@media(max-width:900px){aside{display:none}.doc{padding:26px 18px;border-radius:12px}body{font-size:15px}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside><div class="title">SkillsHub 設計書</div><nav id="toc"></nav></aside>
+  <main><div class="doc" id="content"></div></main>
+</div>
+<div id="lb">
+  <div class="bar">
+    <button id="zout" title="縮小">－</button>
+    <button id="zin" title="拡大">＋</button>
+    <button id="zreset" title="リセット">100%</button>
+    <button id="lbclose">閉じる ✕</button>
+  </div>
+  <div class="stage" id="stage"></div>
+</div>
+<script id="md" type="text/markdown">
+__MD__
+</script>
+<script>
+const md = document.getElementById('md').textContent;
+const content = document.getElementById('content');
+content.innerHTML = marked.parse(md, {gfm:true, breaks:false});
+
+const lb=document.getElementById('lb'), stage=document.getElementById('stage');
+let scale=1;
+const apply=()=>{const s=stage.querySelector('svg'); if(s)s.style.transform='scale('+scale+')';};
+function openLB(svg){
+  stage.innerHTML='';
+  const c=svg.cloneNode(true);
+  const vbW=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||svg.getBoundingClientRect().width||800;
+  c.removeAttribute('width'); c.removeAttribute('height');
+  c.style.maxWidth='none'; c.style.height='auto'; c.style.width=Math.round(vbW)+'px';
+  stage.appendChild(c); scale=1; apply(); lb.classList.add('open');
+}
+const closeLB=()=>lb.classList.remove('open');
+zin.onclick=()=>{scale=Math.min(scale*1.25,6);apply();};
+zout.onclick=()=>{scale=Math.max(scale/1.25,0.4);apply();};
+zreset.onclick=()=>{scale=1;apply();};
+lbclose.onclick=closeLB;
+lb.addEventListener('click',e=>{if(e.target===lb||e.target===stage)closeLB();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLB();});
+
+content.querySelectorAll('code.language-mermaid').forEach(el=>{
+  const pre=document.createElement('pre'); pre.className='mermaid'; pre.textContent=el.textContent;
+  pre.addEventListener('click',()=>{const svg=pre.querySelector('svg'); if(svg)openLB(svg);});
+  el.parentElement.replaceWith(pre);
+});
+mermaid.initialize({startOnLoad:false, theme:'neutral', securityLevel:'loose',
+  flowchart:{useMaxWidth:true, htmlLabels:true, padding:16},
+  sequence:{useMaxWidth:true},
+  themeVariables:{fontSize:'18px'}});
+mermaid.run({querySelector:'.mermaid'});
+
+const toc=document.getElementById('toc');
+const hs=[...content.querySelectorAll('h2')];
+hs.forEach((h,i)=>{const id='sec'+i; h.id=id;
+  const a=document.createElement('a'); a.href='#'+id; a.textContent=h.textContent; toc.appendChild(a);});
+const links=[...toc.querySelectorAll('a')];
+hs.forEach(h=>{new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
+  links.forEach(l=>l.classList.toggle('active', l.getAttribute('href')==='#'+e.target.id));}});},
+  {rootMargin:'0px 0px -75% 0px'}).observe(h);});
+</script>
+</body>
+</html>
+'''
+open('/Users/yuki/Desktop/ai-agent/design.html','w',encoding='utf-8').write(TEMPLATE.replace('__MD__', md))
+print('wrote design.html')
