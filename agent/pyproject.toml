@@ -1,0 +1,9 @@
+[project]
+name = "ai-agent"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12.13"
+dependencies = [
+    "google-adk>=2.2.0",
+    "python-dotenv>=1.2.2",
+]
