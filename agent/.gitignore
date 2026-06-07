@@ -1,0 +1,10 @@
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# ADK
+.adk/
