@@ -429,30 +429,66 @@ erDiagram
 
 ### エージェント構成
 
+実装するエージェントは **5体（＋司書オーケストレータ）** に絞る。設計上の論点だった `Parser` と `Scorer` は1回のLLM呼び出しに統合して `AnalyzerAgent` とし（呼び出し回数とコストを削減）、`FreshnessAgent` は当面 Analyzer 内の仮判定＋日付ルールで代替して独立させない（必要になれば後から分離できる構成）。
+
 ```mermaid
 flowchart TB
-    subgraph Offline["自律バッチ: 司書 (SequentialAgent)"]
-        Collector["CollectorAgent<br/>リポジトリ走査・SKILL.md取得"]
-        Parser["ParserAgent<br/>SKILL.md→構造化(name/desc/tags)"]
-        Scorer["ScorerAgent<br/>品質スコア+内訳"]
-        Fresh["FreshnessAgent<br/>鮮度判定(依存変更検知)"]
-        Embed["埋め込み生成(ツール)"]
-        Dedup["DeduperAgent<br/>類似度→merge提案"]
-        Collector --> Parser --> Scorer --> Fresh --> Embed --> Dedup
+    subgraph Offline["自律バッチ: 司書 LibrarianAgent (SequentialAgent)"]
+        Collector["①CollectorAgent<br/>リポジトリ走査・SKILL.md取得<br/>(tools: GitHub)"]
+        Analyzer["②AnalyzerAgent<br/>Parser+Scorer統合→構造化採点<br/>(name/desc/tags/usage/score/鮮度)<br/>(output_schema)"]
+        Embed["埋め込み生成<br/>(ツール: Vertex AI)"]
+        Dedup["③DeduperAgent<br/>類似度→merge提案<br/>(tools: pgvector/保存)"]
+        Collector --> Analyzer --> Embed --> Dedup
     end
 
     subgraph Online["オンライン: 対話 (アプリから起動)"]
-        Searcher["SearcherAgent<br/>NL→候補(RAG)"]
-        Composer["ComposerAgent<br/>合成ワークフロー提案"]
-        Improver["ImproverAgent<br/>diff改善提案"]
-        Searcher --> Composer
+        Searcher["④SearcherAgent<br/>NL→候補(RAG)<br/>(tools: 埋め込み/近傍) 必須"]
+        Composer["⑤ComposerAgent<br/>合成ワークフロー提案<br/>(output_schema) 任意"]
+        Improver["ImproverAgent<br/>diff改善提案<br/>(output_schema) 任意"]
+        Searcher -.候補2件以上で起動.-> Composer
     end
 ```
 
-- オフライン司書は `SequentialAgent`。Collectorのリポジトリごとに Parser→Scorer→Fresh はリポジトリ内Skill単位で `LoopAgent`/並列化可。
-- オンラインはアプリのリクエスト時に該当エージェントを `Runner` で起動。
-- 各エージェントは ADK の構造化出力（`output_schema` / Pydantic）で結果を返し、後段がパースしやすい契約とする。
+- オフライン司書は `SequentialAgent`（`Collector → Analyzer → Dedup`）。Collectorのリポジトリごとに Analyzer はリポジトリ内Skill単位で `LoopAgent`/並列化可。
+- **ADKの制約**: `output_schema` を設定したエージェントは tools を使えない。そのため「構造化出力が要るもの（Analyzer/Composer/Improver）」と「ツールを叩くもの（Collector/Dedup/Searcher）」で役割を分けている。
+- 各エージェントは結果を `output_key` で session state に書き、後段がそれを読む契約とする（構造化出力は `output_schema` / Pydantic で固定）。
+- オンラインはアプリのリクエスト時に該当エージェントを `Runner` で起動。合成は Searcher→Composer を機械的に直列化せず、`shared.services` が検索候補を見て必要時に Composer を呼ぶ（Composer は構造化出力で tools を持てないため、制御をサービス層に置くと素直）。
+- モデルは Gemini Flash 既定、重い推論（Composer/Improver）のみ Pro 系を使い分け。
 - 収集の処理シーケンスは「全体の流れ」を参照。
+
+### Agentの流れ（データの受け渡し）
+
+各エージェントが session state（`output_key`）を介してどうバトンを渡すかを示す。オフライン司書はリポジトリ→Skill単位で②③をループし、オンラインはユーザー操作起点で④⑤を起動する。
+
+```mermaid
+flowchart LR
+    subgraph Batch["司書バッチ (自律・毎日)"]
+        direction LR
+        C["①Collector"] -->|"raw_skills<br/>(SKILL.md+関連ファイル)"| A["②Analyzer"]
+        A -->|"analyzed_skill<br/>(構造化+score+鮮度)"| E["埋め込み生成(tool)"]
+        E -->|"vector(768)"| D["③Deduper"]
+        D -->|"merge提案"| DB[("Cloud SQL<br/>+ pgvector")]
+        A -.->|"Skill/score保存"| DB
+        E -.->|"embedding保存"| DB
+    end
+
+    subgraph App["オンライン (ユーザー操作)"]
+        direction LR
+        Q(["やりたいこと(自然文)"]) --> S["④Searcher"]
+        S -->|"search_result<br/>(候補+確信度+why)"| SVC{"shared.services<br/>候補2件以上?"}
+        SVC -->|"はい"| CO["⑤Composer"]
+        SVC -->|"いいえ"| OUT([検索結果を表示])
+        CO -->|"compose提案"| OUT
+        DET(["Skill詳細で改善依頼"]) --> IM["ImproverAgent"]
+        IM -->|"improve提案(diff)"| SG[("SUGGESTION")]
+    end
+
+    DB -. 近傍検索 .-> S
+```
+
+- 司書側は「収集→解析→埋め込み→重複検出」を Skill ごとに繰り返し、結果は逐次 Cloud SQL に永続化する（1件失敗しても他Skillは止めない）。
+- オンライン側は `output_key`（`search_result` 等）をサービス層が受け取り、分岐や提案登録を制御する。
+- 提案（merge/compose/improve）は `SUGGESTION` に貯まり、提案レビュー画面で採用/却下する。
 
 ---
 
