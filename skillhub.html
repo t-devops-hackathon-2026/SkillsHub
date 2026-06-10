@@ -101,8 +101,7 @@ pre{background:#f6f8fa;color:#1f2328;padding:14px;border-radius:6px;overflow:aut
 .btn.mut{background:var(--card);color:var(--muted)}
 .btn.mut:hover{background:var(--btn-h);color:var(--ink)}
 .vote-row{display:flex;gap:10px;align-items:center;margin:10px 0 4px;flex-wrap:wrap}
-.comment{border-top:1px solid var(--line-soft);padding:11px 0;font-size:13px}
-.comment .who{font-weight:600;font-size:12px;color:var(--ink);margin-bottom:2px}
+.issue-hint{margin:12px 0 0;font-size:13px;color:var(--muted)}
 .scorebar{height:8px;background:var(--line-soft);border-radius:6px;overflow:hidden;margin-top:5px}
 .scorebar>i{display:block;height:100%;background:var(--success)}
 .row-sb{display:flex;justify-content:space-between;font-size:12.5px;margin-top:12px}
@@ -293,10 +292,6 @@ let skills = [
     breakdown:{description:88,trigger:86,annotation:81}},
 ];
 let votes = {s1:{useful:9,used:5},s2:{useful:6,used:3},s3:{useful:4,used:2},s4:{useful:5,used:2},s5:{useful:1,used:0},s6:{useful:7,used:4}};
-let comments = {
-  s1:[{who:"tanaka",body:"出力のタスク粒度を調整したい場面があった。"}],
-  s3:[{who:"sato",body:"API変更で落ちるようになった。修正提案がほしい。"}],
-};
 let suggestions = [
   {id:"g1",type:"merge",skill_ids:["s5","s1"],status:"open",confidence:0.91,content:"「議事録サマリ作成」は「議事録要約」と機能が重複しています（類似度 0.91）。後者へ統合し、3行要約モードをオプションとして取り込むことを提案します。"},
   {id:"g2",type:"update",skill_ids:["s3"],status:"open",confidence:0.88,content:"参照先データカタログAPIのエンドポイント変更を検知しました。下記diffを適用すると復旧します。",
@@ -353,7 +348,7 @@ function renderGrid(){
       <h3>${s.name}</h3><p>${s.description}</p>
       <div class="tags">${s.tags.map(t=>`<span class="tag">${t}</span>`).join("")}</div>
       <div class="meta"><span>@${s.author} ・ 📄 ${s.files.length}</span>
-        <span class="engage"><span>👍 ${(votes[s.id]||{}).useful||0}</span><span>💬 ${(comments[s.id]||[]).length}</span></span></div>
+        <span class="engage"><span>👍 ${(votes[s.id]||{}).useful||0}</span></span></div>
     </div>`;
   }).join("") : '<div class="empty">該当するSkillsがありません。</div>';
 }
@@ -362,7 +357,7 @@ function renderGrid(){
 // ---------- detail ----------
 function openDetail(id){
   const s=skillById(id);const[bc,bt]=badge(s.freshness_status);
-  const cs=comments[id]||[];const v=votes[id]||{useful:0,used:0};
+  const v=votes[id]||{useful:0,used:0};
   const sug=suggestions.filter(x=>x.skill_ids.includes(id)&&x.status==="open");
   $("#detail").innerHTML=`
     <button class="back" onclick="show('dash')">← 一覧へ戻る</button>
@@ -389,17 +384,11 @@ function openDetail(id){
         <button class="btn ghost" onclick="vote('${id}','useful')">👍 役に立った（${v.useful}）</button>
         <button class="btn mut" onclick="vote('${id}','used')">✓ 使った（${v.used}）</button>
       </div>
-      <div id="comments" style="margin-top:6px">${cs.map(c=>`<div class="comment"><div class="who">@${c.who}</div>${c.body}</div>`).join("")||'<p style="color:var(--muted)">まだコメントはありません。</p>'}</div>
-      <div class="vote-row"><input type="text" id="cIn" placeholder="コメントを追加" style="flex:1"><button class="btn" onclick="addComment('${id}')">投稿</button></div>
+      <p class="issue-hint">要望や議論は <a href="${srcUrl(s)}" target="_blank" rel="noopener">ソースリポジトリの GitHub issue</a> へ。</p>
     </div>`;
   show("detail");window.scrollTo(0,0);
 }
 function vote(id,t){votes[id]=votes[id]||{useful:0,used:0};votes[id][t]++;toast(t==="useful"?"「役に立った」を記録しました":"「使った」を記録しました");openDetail(id);renderGrid();}
-function addComment(id){
-  const val=$("#cIn").value.trim();if(!val)return;
-  (comments[id]=comments[id]||[]).push({who:"horikoshi",body:val});
-  toast("コメントを投稿しました");openDetail(id);renderGrid();
-}
 
 // ---------- suggestions ----------
 function diffHtml(d){return `<pre class="diff">${d.map(([t,l])=>`<span class="${t}">${l}</span>`).join("")}</pre>`;}
