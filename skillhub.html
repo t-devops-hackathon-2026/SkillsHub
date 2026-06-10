@@ -78,7 +78,7 @@ select{cursor:pointer;color:var(--ink)}
 .b-stale{background:var(--stale-bg);color:var(--stale)}
 .b-update{background:var(--update-bg);color:var(--update)}
 .score{font-weight:600;color:var(--muted)}
-.engage{display:flex;gap:12px;font-size:12px;color:var(--muted)}
+.src-mini{font-size:12px;color:var(--muted)}
 
 /* detail */
 .back{font-family:inherit;background:none;border:0;color:var(--accent);cursor:pointer;font-weight:500;padding:0;margin-bottom:16px;font-size:13px}
@@ -200,7 +200,7 @@ table.repos th{color:var(--muted);font-weight:600;font-size:12px;background:var(
       <input type="text" id="q" placeholder="名前・説明・タグで絞り込み">
       <select id="fStatus"><option value="">鮮度: すべて</option><option value="new">最新</option><option value="stale">要注意</option><option value="needs_update">要更新</option></select>
       <select id="fTag"><option value="">タグ: すべて</option></select>
-      <select id="sort"><option value="score">品質スコア順</option><option value="updated">更新日順</option><option value="votes">投票数順</option></select>
+      <select id="sort"><option value="score">品質スコア順</option><option value="updated">更新日順</option></select>
     </div>
     <div class="grid" id="grid"></div>
   </section>
@@ -291,7 +291,6 @@ let skills = [
     files:[["SKILL.md","1.6KB"],["format.py","2.7KB"]],
     breakdown:{description:88,trigger:86,annotation:81}},
 ];
-let votes = {s1:{useful:9,used:5},s2:{useful:6,used:3},s3:{useful:4,used:2},s4:{useful:5,used:2},s5:{useful:1,used:0},s6:{useful:7,used:4}};
 let suggestions = [
   {id:"g1",type:"merge",skill_ids:["s5","s1"],status:"open",confidence:0.91,content:"「議事録サマリ作成」は「議事録要約」と機能が重複しています（類似度 0.91）。後者へ統合し、3行要約モードをオプションとして取り込むことを提案します。"},
   {id:"g2",type:"update",skill_ids:["s3"],status:"open",confidence:0.88,content:"参照先データカタログAPIのエンドポイント変更を検知しました。下記diffを適用すると復旧します。",
@@ -310,7 +309,6 @@ let repos = [
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const badge=s=>({new:["b-fresh","最新"],stale:["b-stale","要注意"],needs_update:["b-update","要更新"]}[s]);
 const skillById=id=>skills.find(s=>s.id===id);
-const vsum=id=>{const v=votes[id]||{useful:0,used:0};return v.useful+v.used;};
 const srcUrl=s=>REPO_BASE+s.source_repo+"/tree/main/"+(s.source_path||"");
 function srcLink(s){return `<a href="${srcUrl(s)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${s.source_repo}/${s.source_path}</a>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200);}
@@ -340,7 +338,7 @@ function renderGrid(){
     return (!q||hay.includes(q.toLowerCase()))&&(!fs||s.freshness_status===fs)&&(!ft||s.tags.includes(ft));
   });
   list.sort((a,b)=> sort==="updated"? b.last_updated.localeCompare(a.last_updated)
-    : sort==="votes"? vsum(b.id)-vsum(a.id) : b.quality_score-a.quality_score);
+    : b.quality_score-a.quality_score);
   $("#grid").innerHTML = list.length? list.map(s=>{
     const[bc,bt]=badge(s.freshness_status);
     return `<div class="card" onclick="openDetail('${s.id}')">
@@ -348,7 +346,7 @@ function renderGrid(){
       <h3>${s.name}</h3><p>${s.description}</p>
       <div class="tags">${s.tags.map(t=>`<span class="tag">${t}</span>`).join("")}</div>
       <div class="meta"><span>@${s.author} ・ 📄 ${s.files.length}</span>
-        <span class="engage"><span>👍 ${(votes[s.id]||{}).useful||0}</span></span></div>
+        <span class="src-mini">${s.source_repo}</span></div>
     </div>`;
   }).join("") : '<div class="empty">該当するSkillsがありません。</div>';
 }
@@ -357,7 +355,6 @@ function renderGrid(){
 // ---------- detail ----------
 function openDetail(id){
   const s=skillById(id);const[bc,bt]=badge(s.freshness_status);
-  const v=votes[id]||{useful:0,used:0};
   const sug=suggestions.filter(x=>x.skill_ids.includes(id)&&x.status==="open");
   $("#detail").innerHTML=`
     <button class="back" onclick="show('dash')">← 一覧へ戻る</button>
@@ -379,16 +376,11 @@ function openDetail(id){
     </div>
     ${sug.length?`<div class="panel"><h3>エージェントの改善提案</h3>${sug.map(renderSugInline).join("")}</div>`:""}
     <div class="panel">
-      <h3>評価</h3>
-      <div class="vote-row">
-        <button class="btn ghost" onclick="vote('${id}','useful')">👍 役に立った（${v.useful}）</button>
-        <button class="btn mut" onclick="vote('${id}','used')">✓ 使った（${v.used}）</button>
-      </div>
-      <p class="issue-hint">要望や議論は <a href="${srcUrl(s)}" target="_blank" rel="noopener">ソースリポジトリの GitHub issue</a> へ。</p>
+      <h3>要望・議論</h3>
+      <p class="issue-hint">投票・コメント機能は持ちません。要望や議論は <a href="${srcUrl(s)}" target="_blank" rel="noopener">ソースリポジトリの GitHub issue</a> へ。</p>
     </div>`;
   show("detail");window.scrollTo(0,0);
 }
-function vote(id,t){votes[id]=votes[id]||{useful:0,used:0};votes[id][t]++;toast(t==="useful"?"「役に立った」を記録しました":"「使った」を記録しました");openDetail(id);renderGrid();}
 
 // ---------- suggestions ----------
 function diffHtml(d){return `<pre class="diff">${d.map(([t,l])=>`<span class="${t}">${l}</span>`).join("")}</pre>`;}
@@ -458,7 +450,6 @@ async function runCollect(){
       usage:"PR番号またはdiffを渡すと、変更点・影響範囲・確認観点を3部構成で返します。",
       files:[["SKILL.md","2.0KB"],["pr_summary.py","3.1KB"]],
       breakdown:{description:83,trigger:78,annotation:79}});
-    votes["s7"]={useful:0,used:0};
     suggestions.unshift({id:"g5",type:"compose",skill_ids:["s7","s4"],status:"open",confidence:0.82,content:"新規の「PR要約」と「コードレビュー観点」を連結すると、PRの要約とチェックリスト指摘を一度に出せます。"});
   }
   $("#lastrun").textContent="2026-06-05 09:00";
