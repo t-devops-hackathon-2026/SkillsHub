@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 3 仕様書: 利用状況と品質スコアで Skill の価値を測れる</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root{
+  --bg:#f5f7fa; --paper:#ffffff; --ink:#1d2733; --muted:#5d6b7b; --line:#e6eaef;
+  --brand:#3b5bdb; --brand-soft:#eef2ff; --code-bg:#0d1117; --code-ink:#d5dae3;
+  --th:#eef2f8; --shadow:0 1px 3px rgba(20,30,50,.06);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  line-height:1.9;font-size:16px;-webkit-font-smoothing:antialiased}
+.layout{display:flex;max-width:1320px;margin:0 auto;gap:32px;padding:0 22px}
+aside{position:sticky;top:0;align-self:flex-start;height:100vh;overflow:auto;
+  width:262px;flex:none;padding:28px 8px 48px;border-right:1px solid var(--line)}
+aside .title{font-weight:800;color:var(--brand);font-size:17px;margin:0 8px 18px;letter-spacing:.3px}
+aside .docs{margin:0 8px 20px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+aside .docs a{font-size:12.5px;padding:5px 8px}
+aside a{display:block;color:var(--muted);text-decoration:none;font-size:13.5px;
+  padding:7px 11px;border-radius:8px;border-left:2px solid transparent}
+aside a:hover{background:var(--brand-soft);color:var(--brand)}
+aside a.active{background:var(--brand-soft);color:var(--brand);border-left-color:var(--brand);font-weight:700}
+aside a.current{color:var(--brand);font-weight:700}
+main{flex:1;min-width:0;padding:38px 6px 140px}
+.doc{background:var(--paper);border:1px solid var(--line);border-radius:18px;
+  padding:46px 54px;box-shadow:var(--shadow)}
+h1{font-size:31px;margin:0 0 8px;letter-spacing:.3px}
+h2{font-size:23px;margin:52px 0 16px;padding-top:22px;border-top:2px solid var(--line)}
+h2:first-of-type{border-top:0;padding-top:0}
+h3{font-size:18.5px;margin:32px 0 10px;color:#26384b}
+h4{font-size:15px;margin:22px 0 8px;color:var(--brand)}
+p{margin:11px 0}
+a{color:var(--brand)}
+ul{margin:9px 0;padding-left:24px}
+li{margin:5px 0}
+code{background:#eef1f5;color:#274060;padding:2px 6px;border-radius:5px;
+  font-family:"SFMono-Regular",Consolas,Menlo,monospace;font-size:.85em}
+pre{background:var(--code-bg);color:var(--code-ink);padding:18px 20px;border-radius:13px;
+  overflow:auto;font-size:13.5px;line-height:1.65;margin:16px 0}
+pre code{background:none;color:inherit;padding:0;font-size:13.5px}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px;
+  border:1px solid var(--line);border-radius:11px;overflow:hidden}
+th,td{border:1px solid var(--line);padding:10px 13px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:700}
+tr:nth-child(even) td{background:#fafbfd}
+blockquote{margin:18px 0;padding:13px 18px;background:var(--brand-soft);
+  border-left:4px solid var(--brand);border-radius:0 11px 11px 0;color:#33415a;font-size:14px}
+blockquote p{margin:0}
+hr{display:none}
+pre.mermaid{position:relative;background:var(--paper);color:inherit;border:1px solid var(--line);
+  border-radius:14px;padding:26px;margin:20px 0;text-align:center;overflow:auto;cursor:zoom-in;
+  transition:box-shadow .15s,border-color .15s}
+pre.mermaid:hover{border-color:#c3ccf7;box-shadow:0 4px 18px rgba(59,91,219,.12)}
+pre.mermaid::after{content:"🔍 クリックで拡大";position:absolute;top:10px;right:12px;
+  font-size:11.5px;color:#fff;background:rgba(59,91,219,.92);padding:3px 10px;border-radius:20px;
+  opacity:0;transition:opacity .15s;pointer-events:none}
+pre.mermaid:hover::after{opacity:1}
+#lb{position:fixed;inset:0;background:rgba(13,20,30,.88);z-index:1000;display:none}
+#lb.open{display:flex;flex-direction:column}
+#lb .bar{flex:none;display:flex;gap:10px;justify-content:center;align-items:center;padding:12px;color:#fff}
+#lb .bar button{background:#2a3a55;color:#fff;border:0;height:42px;min-width:42px;padding:0 14px;
+  border-radius:10px;font-size:18px;cursor:pointer;font-weight:700}
+#lb .bar button:hover{background:var(--brand)}
+#lb .stage{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:24px}
+#lb .stage svg{transform-origin:top center;transition:transform .08s}
+@media(max-width:900px){aside{display:none}.doc{padding:26px 18px;border-radius:12px}body{font-size:15px}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <div class="title">SkillsHub 設計書</div>
+    <div class="docs">
+      <a href="../overview/overview.html" data-doc="overview">総括</a>
+      <a href="../step1/step1.html" data-doc="step1">Step 1: 集めて探せる</a>
+      <a href="../step2/step2.html" data-doc="step2">Step 2: 改善提案</a>
+      <a href="../step3/step3.html" data-doc="step3">Step 3: 利用記録・品質</a>
+    </div>
+    <nav id="toc"></nav>
+  </aside>
+  <main><div class="doc" id="content"></div></main>
+</div>
+<div id="lb">
+  <div class="bar">
+    <button id="zout" title="縮小">－</button>
+    <button id="zin" title="拡大">＋</button>
+    <button id="zreset" title="リセット">100%</button>
+    <button id="lbclose">閉じる ✕</button>
+  </div>
+  <div class="stage" id="stage"></div>
+</div>
+<script id="md" type="text/markdown">
+# Step 3 仕様書: 利用状況と品質スコアで Skill の価値を測れる
+
+全体像は [総括](../overview/overview.md)、前提となる機能は [Step 1 仕様書](../step1/step1.md)・[Step 2 仕様書](../step2/step2.md) を参照。本書は Step 3 で追加する範囲だけを定義する。
+
+この仕様の動作デモ: [demos/step3/demo.html](../../../demos/step3/demo.html)（ブラウザで開ける。Step 間はデモ右上のリンクで行き来できる）
+
+## このステップでできること
+
+Step 1・2 の全機能に加えて、次ができるようになる。
+
+1. 各 Skill の利用回数が匿名で集計され、ダッシュボード・詳細画面で需要・人気として可視化される。
+2. 司書が各 Skill を3観点で採点し、品質スコア（0-100）と内訳が表示される。
+3. 鮮度判定がコミット経過時間＋利用回数の2軸になり、「古いが使われている＝優先手当て」「古く使われていない＝廃止候補」を区別できる。
+4. 利用者は自分の環境に hooks を設定するだけ（オプトイン）で、利用回数の集計に参加できる。
+
+## 追加するもの / 変更するもの
+
+| 区分 | 内容 |
+|---|---|
+| 収集 | hooks による利用イベントの匿名・非同期収集（ローカルバッファ＋日次まとめ送信） |
+| エージェント | `AnalyzerAgent` に品質採点ステップを追加（解析と同じ1回のLLM呼び出しに統合） |
+| 鮮度判定 | コミット経過時間＋利用回数の2軸判定に拡張 |
+| 画面: ダッシュボード | Skillカード・ソートに品質スコアと利用回数を追加 |
+| 画面: Skill詳細 | 品質スコア内訳（3観点のバー表示）と利用状況（回数推移）を追加 |
+| データモデル | `Usage_Event` テーブルを追加。`Skill` に `quality_score` / `quality_breakdown` カラムを追加 |
+
+## 画面遷移（Step 3 時点＝完全版）
+
+画面遷移は Step 2 から変わらず、各画面の表示項目が増える。完全版の画面仕様は [総括の「完全版の画面」](../overview/overview.md#完全版の画面) を参照。
+
+```mermaid
+flowchart LR
+    Dash["① ダッシュボード<br/>+ 品質スコア/利用回数"]
+    Search["② 自然言語検索"]
+    Detail["③ Skill詳細<br/>+ スコア内訳/利用状況"]
+    Suggest["④ 提案レビュー"]
+    Reg["⑤ リポジトリ登録"]
+
+    Dash -->|カード選択| Detail
+    Dash -->|上部検索バー| Search
+    Dash -->|ナビ| Suggest
+    Dash -->|ナビ| Reg
+    Search -->|候補カード選択| Detail
+    Search -->|合成提案を採用| Suggest
+    Detail -->|改善提案を承認| Suggest
+    Detail -->|戻る| Dash
+    Suggest -->|対象Skillへ| Detail
+    Reg -->|今すぐ収集| Dash
+```
+
+## シーケンス（追加・拡張分）
+
+### 利用記録の収集（hooks → 司書バッチ回収）
+
+GCS アップロード回収方式（推奨案）の場合。
+
+```mermaid
+sequenceDiagram
+    participant HK as 利用者環境のhooks
+    participant BUF as ローカルバッファ
+    participant GCS as GCS バケット
+    participant Lib as 司書(ADK)
+    participant DB as Cloud SQL
+
+    Note over HK: Skill実行のたび(同期通信なし)
+    HK->>BUF: イベント追記(skill_name/used_at)
+    Note over BUF,GCS: 日次などでまとめて
+    BUF->>GCS: イベントファイルをアップロード(署名URL/サービスキー)
+    Note over Lib: 毎日のバッチ実行時
+    Lib->>GCS: イベントファイルを回収
+    Lib->>DB: USAGE_EVENTに集計登録
+```
+
+### 司書による収集（Step 1 のシーケンスに採点と2軸鮮度判定を追加）
+
+```mermaid
+sequenceDiagram
+    participant Sch as Cloud Scheduler
+    participant Lib as 司書(ADK)
+    participant GH as GitHub App
+    participant Gem as Gemini
+    participant Emb as Embeddings
+    participant DB as Cloud SQL
+
+    Sch->>Lib: 起動(毎日03:00)
+    loop 登録リポジトリごと
+        Lib->>GH: Skillディレクトリ一覧・取得
+        GH-->>Lib: SKILL.md + 関連ファイル + commitメタ
+        Note over Lib: content_hash比較で変更分のみ処理
+        Lib->>Gem: 解析 / 品質採点 / 鮮度判定
+        Gem-->>Lib: 構造化結果(score内訳含む)
+        Lib->>DB: 利用回数を参照(2軸判定)
+        Lib->>Emb: 本文をベクトル化
+        Emb-->>Lib: vector(768)
+        Lib->>DB: Skill・スコア・埋め込みを保存
+        Lib->>DB: 類似検出→merge提案を生成
+    end
+    Lib->>DB: last_collected_at 更新
+```
+
+## 利用記録の収集方式
+
+プライバシーと負荷に配慮し、匿名・オプトイン・最小データに限定する。
+
+- 収集範囲は最小: 「どの Skill を使ったか」（`skill_name` / `used_at`）のみ。匿名の回数集計であり、Skill の実行内容や入出力は収集対象外。
+- オプトイン: 各利用者が自分の環境で hooks を設定したときだけ送信される。使いたい人だけが設定すればよい。
+- 送信方式（負荷・受け口への配慮）: Skill 実行のたびに同期 HTTP を叩く方式は、通信オーバーヘッドと受け口の常時開放という難点がある（Skill によっては高頻度実行もありうる）。そこでローカルにイベントをバッファし、日次などでまとめて送る非同期方式を基本とする。これにより実行のホットパスから通信を外し、公開する受け口も最小化する。
+- 収集口の信頼方式（本ステップ着手時に確定）: ダッシュボード自体はログイン不要だが、収集口は受け口を絞る方向を推奨する。候補は次の3つ。
+  1. GCS へアップロード回収（推奨）: 収集APIを公開せず、hooks はサービスキー/署名URLで GCS にイベントファイルを投下、司書バッチが回収する。受け口の攻撃面が最小。
+  2. 共有トークン付き収集API: 軽量な収集APIを立て、配布した共有トークンで受理。実装は素直だが受け口を常時公開する。
+  3. GitHub トークンでのゲート: org メンバーに絞りたい場合のみ、hooks の GitHub トークンを収集側で検証する。匿名集計が前提のため通常は過剰。
+- 集計結果は `Usage_Event` に蓄積する。
+
+## アルゴリズム仕様（追加・拡張分）
+
+### 品質スコア（0-100）
+
+> 💬 評価観点・重み・算出式は暫定値。スコアの納得感はユーザーの信頼に直結するため、実 Skill で検証しながら優先して詰める。
+
+Analyzer（採点ステップ）が3観点を各0-100で採点し、加重平均で総合スコアを出す。観点は Step 2 の改善提案と共通。
+
+- 説明の明確さ `description`（重み0.4）: 何をするSkillか一読で分かるか。
+- トリガー精度 `trigger`（重み0.35）: 「いつ使うか」の記述が具体的か。
+- 注釈の充実 `annotation`（重み0.25）: 入出力例・前提・制約の記載。
+- `quality_score = round(0.40*d + 0.35*t + 0.25*a)`。内訳は `quality_breakdown` に保存し詳細画面で可視化。
+
+品質スコアは Step 2 の改善提案（improve）の優先度付けにも使う（スコアの低い観点から改善する）。
+
+### 鮮度判定の2軸化
+
+Step 1 の「コミット経過時間」に「利用回数」を加えた2軸で判定する。
+
+- 古くても利用が多い Skill → 価値が高いので優先的に手当て（改善提案の優先度を上げる）。
+- 古くて利用も少ない Skill → 廃止候補として扱う。
+
+## データモデル（Step 3 で追加するもの）
+
+- `Usage_Event` テーブルを追加（`skill_id` / `used_at`。匿名・回数集計）。
+- `Skill` に `quality_score`（int, 0-100）と `quality_breakdown`（jsonb）カラムを追加。
+- ER 図は [総括のデータモデル](../overview/overview.md#データモデル) を参照。
+
+</script>
+<script>
+const md = document.getElementById('md').textContent;
+const content = document.getElementById('content');
+content.innerHTML = marked.parse(md, {gfm:true, breaks:false});
+
+// 仕様書間のリンクは .md と .html を併設しているので HTML 側へ付け替える
+content.querySelectorAll('a[href]').forEach(a=>{
+  const h=a.getAttribute('href');
+  if(h && !/^https?:/.test(h) && /\.md(#|$)/.test(h)) a.setAttribute('href', h.replace(/\.md(#|$)/, '.html$1'));
+});
+document.querySelectorAll('aside .docs a').forEach(a=>{
+  if(a.dataset.doc==='step3') a.classList.add('current');
+});
+
+const lb=document.getElementById('lb'), stage=document.getElementById('stage');
+let scale=1;
+const apply=()=>{const s=stage.querySelector('svg'); if(s)s.style.transform='scale('+scale+')';};
+function openLB(svg){
+  stage.innerHTML='';
+  const c=svg.cloneNode(true);
+  const vbW=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||svg.getBoundingClientRect().width||800;
+  c.removeAttribute('width'); c.removeAttribute('height');
+  c.style.maxWidth='none'; c.style.height='auto'; c.style.width=Math.round(vbW)+'px';
+  stage.appendChild(c); scale=1; apply(); lb.classList.add('open');
+}
+const closeLB=()=>lb.classList.remove('open');
+zin.onclick=()=>{scale=Math.min(scale*1.25,6);apply();};
+zout.onclick=()=>{scale=Math.max(scale/1.25,0.4);apply();};
+zreset.onclick=()=>{scale=1;apply();};
+lbclose.onclick=closeLB;
+lb.addEventListener('click',e=>{if(e.target===lb||e.target===stage)closeLB();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLB();});
+
+content.querySelectorAll('code.language-mermaid').forEach(el=>{
+  const pre=document.createElement('pre'); pre.className='mermaid'; pre.textContent=el.textContent;
+  pre.addEventListener('click',()=>{const svg=pre.querySelector('svg'); if(svg)openLB(svg);});
+  el.parentElement.replaceWith(pre);
+});
+mermaid.initialize({startOnLoad:false, theme:'neutral', securityLevel:'loose',
+  flowchart:{useMaxWidth:true, htmlLabels:true, padding:16},
+  sequence:{useMaxWidth:true},
+  themeVariables:{fontSize:'18px'}});
+mermaid.run({querySelector:'.mermaid'});
+
+const toc=document.getElementById('toc');
+const hs=[...content.querySelectorAll('h2')];
+hs.forEach((h,i)=>{const id='sec'+i; h.id=id;
+  const a=document.createElement('a'); a.href='#'+id; a.textContent=h.textContent; toc.appendChild(a);});
+const links=[...toc.querySelectorAll('a')];
+hs.forEach(h=>{new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
+  links.forEach(l=>l.classList.toggle('active', l.getAttribute('href')==='#'+e.target.id));}});},
+  {rootMargin:'0px 0px -75% 0px'}).observe(h);});
+</script>
+</body>
+</html>

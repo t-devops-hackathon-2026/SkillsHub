@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 1 仕様書: Skill を集めて探せる・重複と陳腐化に気づける</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root{
+  --bg:#f5f7fa; --paper:#ffffff; --ink:#1d2733; --muted:#5d6b7b; --line:#e6eaef;
+  --brand:#3b5bdb; --brand-soft:#eef2ff; --code-bg:#0d1117; --code-ink:#d5dae3;
+  --th:#eef2f8; --shadow:0 1px 3px rgba(20,30,50,.06);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  line-height:1.9;font-size:16px;-webkit-font-smoothing:antialiased}
+.layout{display:flex;max-width:1320px;margin:0 auto;gap:32px;padding:0 22px}
+aside{position:sticky;top:0;align-self:flex-start;height:100vh;overflow:auto;
+  width:262px;flex:none;padding:28px 8px 48px;border-right:1px solid var(--line)}
+aside .title{font-weight:800;color:var(--brand);font-size:17px;margin:0 8px 18px;letter-spacing:.3px}
+aside .docs{margin:0 8px 20px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+aside .docs a{font-size:12.5px;padding:5px 8px}
+aside a{display:block;color:var(--muted);text-decoration:none;font-size:13.5px;
+  padding:7px 11px;border-radius:8px;border-left:2px solid transparent}
+aside a:hover{background:var(--brand-soft);color:var(--brand)}
+aside a.active{background:var(--brand-soft);color:var(--brand);border-left-color:var(--brand);font-weight:700}
+aside a.current{color:var(--brand);font-weight:700}
+main{flex:1;min-width:0;padding:38px 6px 140px}
+.doc{background:var(--paper);border:1px solid var(--line);border-radius:18px;
+  padding:46px 54px;box-shadow:var(--shadow)}
+h1{font-size:31px;margin:0 0 8px;letter-spacing:.3px}
+h2{font-size:23px;margin:52px 0 16px;padding-top:22px;border-top:2px solid var(--line)}
+h2:first-of-type{border-top:0;padding-top:0}
+h3{font-size:18.5px;margin:32px 0 10px;color:#26384b}
+h4{font-size:15px;margin:22px 0 8px;color:var(--brand)}
+p{margin:11px 0}
+a{color:var(--brand)}
+ul{margin:9px 0;padding-left:24px}
+li{margin:5px 0}
+code{background:#eef1f5;color:#274060;padding:2px 6px;border-radius:5px;
+  font-family:"SFMono-Regular",Consolas,Menlo,monospace;font-size:.85em}
+pre{background:var(--code-bg);color:var(--code-ink);padding:18px 20px;border-radius:13px;
+  overflow:auto;font-size:13.5px;line-height:1.65;margin:16px 0}
+pre code{background:none;color:inherit;padding:0;font-size:13.5px}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14px;
+  border:1px solid var(--line);border-radius:11px;overflow:hidden}
+th,td{border:1px solid var(--line);padding:10px 13px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:700}
+tr:nth-child(even) td{background:#fafbfd}
+blockquote{margin:18px 0;padding:13px 18px;background:var(--brand-soft);
+  border-left:4px solid var(--brand);border-radius:0 11px 11px 0;color:#33415a;font-size:14px}
+blockquote p{margin:0}
+hr{display:none}
+pre.mermaid{position:relative;background:var(--paper);color:inherit;border:1px solid var(--line);
+  border-radius:14px;padding:26px;margin:20px 0;text-align:center;overflow:auto;cursor:zoom-in;
+  transition:box-shadow .15s,border-color .15s}
+pre.mermaid:hover{border-color:#c3ccf7;box-shadow:0 4px 18px rgba(59,91,219,.12)}
+pre.mermaid::after{content:"🔍 クリックで拡大";position:absolute;top:10px;right:12px;
+  font-size:11.5px;color:#fff;background:rgba(59,91,219,.92);padding:3px 10px;border-radius:20px;
+  opacity:0;transition:opacity .15s;pointer-events:none}
+pre.mermaid:hover::after{opacity:1}
+#lb{position:fixed;inset:0;background:rgba(13,20,30,.88);z-index:1000;display:none}
+#lb.open{display:flex;flex-direction:column}
+#lb .bar{flex:none;display:flex;gap:10px;justify-content:center;align-items:center;padding:12px;color:#fff}
+#lb .bar button{background:#2a3a55;color:#fff;border:0;height:42px;min-width:42px;padding:0 14px;
+  border-radius:10px;font-size:18px;cursor:pointer;font-weight:700}
+#lb .bar button:hover{background:var(--brand)}
+#lb .stage{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:24px}
+#lb .stage svg{transform-origin:top center;transition:transform .08s}
+@media(max-width:900px){aside{display:none}.doc{padding:26px 18px;border-radius:12px}body{font-size:15px}}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <div class="title">SkillsHub 設計書</div>
+    <div class="docs">
+      <a href="../overview/overview.html" data-doc="overview">総括</a>
+      <a href="../step1/step1.html" data-doc="step1">Step 1: 集めて探せる</a>
+      <a href="../step2/step2.html" data-doc="step2">Step 2: 改善提案</a>
+      <a href="../step3/step3.html" data-doc="step3">Step 3: 利用記録・品質</a>
+    </div>
+    <nav id="toc"></nav>
+  </aside>
+  <main><div class="doc" id="content"></div></main>
+</div>
+<div id="lb">
+  <div class="bar">
+    <button id="zout" title="縮小">－</button>
+    <button id="zin" title="拡大">＋</button>
+    <button id="zreset" title="リセット">100%</button>
+    <button id="lbclose">閉じる ✕</button>
+  </div>
+  <div class="stage" id="stage"></div>
+</div>
+<script id="md" type="text/markdown">
+# Step 1 仕様書: Skill を集めて探せる・重複と陳腐化に気づける
+
+全体像・技術スタック・インフラ構成は [総括](../overview/overview.md) を参照。本書は Step 1 で実装する範囲だけを定義する。
+
+この仕様の動作デモ: [demos/step1/demo.html](../../../demos/step1/demo.html)（ブラウザで開ける。Step 間はデモ右上のリンクで行き来できる）
+
+## このステップでできること
+
+1. 司書エージェントが毎日自動で登録リポジトリを巡回し、Skill を収集・解析してカタログ化する。
+2. ダッシュボードで全 Skill を一覧・絞り込み・サマリ表示できる。
+3. 「やりたいこと」を自然文で入力すると、合致する Skill が確信度・推薦理由つきで見つかる。
+4. Skill 詳細で説明・タグ・自動生成の使い方・鮮度を確認できる。
+5. 重複している Skill（merge）、組み合わせると目的を達成できる Skill（compose）、陳腐化した Skill の更新案（update）の3種の提案を受け取り、採用/却下を記録できる。
+6. 収集対象の Organization / リポジトリを画面から登録・即時収集できる。
+
+このステップ単体で「散在 Skill を集めて可視化し、重複・陳腐化を自動で指摘し、合成・更新まで提案する」デモが成立する。
+
+## 画面（Step 1 時点）
+
+5画面すべてをこのステップで作る。完全版との違いは、品質スコア（Step 3）と利用状況（Step 3）、改善提案 improve（Step 2）が画面に現れない点。
+
+```mermaid
+flowchart LR
+    Dash["① ダッシュボード<br/>一覧/絞り込み/サマリ"]
+    Search["② 自然言語検索<br/>チャット型"]
+    Detail["③ Skill詳細<br/>使い方/鮮度/提案"]
+    Suggest["④ 提案レビュー<br/>重複/合成/更新"]
+    Reg["⑤ リポジトリ登録<br/>Org / owner/repo 管理"]
+
+    Dash -->|カード選択| Detail
+    Dash -->|上部検索バー| Search
+    Dash -->|ナビ| Suggest
+    Dash -->|ナビ| Reg
+    Search -->|候補カード選択| Detail
+    Search -->|合成提案を採用| Suggest
+    Detail -->|戻る| Dash
+    Suggest -->|対象Skillへ| Detail
+    Reg -->|今すぐ収集| Dash
+```
+
+各画面の Step 1 時点の内容:
+
+- ダッシュボード: サマリカード（登録Skills数 / 重複候補数 / 要更新数 / 陳腐化注意数）、絞り込み（フリーワード・鮮度・タグ）、ソート（更新日）、Skillカード（鮮度バッジ・タグ・作者・取得元リンク）。
+- 自然言語検索: チャットUIで候補最大3件を確信度・推薦理由つきで提示。候補が2件以上なら合成ワークフロー提案を併記。
+- Skill詳細: 鮮度バッジ・タグ・説明・作者・取得元リンク・最終更新・使い方（自動生成）・open な提案（merge/compose/update）の承認/却下・GitHub issue への誘導リンク。
+- 提案レビュー: open な Suggestion 一覧（merge/compose/update）、diff 表示、採用/却下。
+- リポジトリ登録: 登録済み一覧、新規登録フォーム、「今すぐ収集」ボタン。
+
+## シーケンス
+
+### 司書による収集（バッチ・自動実行）
+
+```mermaid
+sequenceDiagram
+    participant Sch as Cloud Scheduler
+    participant Lib as 司書(ADK)
+    participant GH as GitHub App
+    participant Gem as Gemini
+    participant Emb as Embeddings
+    participant DB as Cloud SQL
+
+    Sch->>Lib: 起動(毎日03:00)
+    loop 登録リポジトリごと
+        Lib->>GH: Skillディレクトリ一覧・取得
+        GH-->>Lib: SKILL.md + 関連ファイル + commitメタ
+        Note over Lib: content_hash比較で変更分のみ処理
+        Lib->>Gem: 解析(name/desc/tags/usage) / 鮮度判定
+        Gem-->>Lib: 構造化結果
+        Lib->>Emb: 本文をベクトル化
+        Emb-->>Lib: vector(768)
+        Lib->>DB: Skill・埋め込みを保存
+        Lib->>DB: 類似検出→merge提案を生成
+        Note over Lib,DB: needs_update 検知時は update提案(diff)も生成
+    end
+    Lib->>DB: last_collected_at 更新
+```
+
+### 自然言語検索（ユーザー操作）
+
+```mermaid
+sequenceDiagram
+    participant UI as Streamlit画面
+    participant SVC as shared.services.search_skills
+    participant S as Searcher(ADK)
+    participant CO as Composer(ADK)
+    participant DB as Cloud SQL
+    UI->>SVC: search_skills(query)
+    SVC->>S: run(query)
+    S->>S: クエリをベクトル化
+    S->>DB: ベクトル近傍検索(top_k)
+    DB-->>S: 候補Skills
+    S-->>SVC: 候補 + 確信度 + why
+    alt 候補が2件以上
+        SVC->>CO: run(候補)
+        CO-->>SVC: 合成ワークフロー提案
+    end
+    SVC-->>UI: 検索結果(候補 + 合成提案)
+```
+
+## ADKエージェント構成（Step 1: 5体＋司書オーケストレータ）
+
+```mermaid
+flowchart TB
+    subgraph Offline["自律バッチ: 司書 LibrarianAgent (SequentialAgent)"]
+        Collector["①CollectorAgent<br/>リポジトリ走査・SKILL.md取得<br/>(tools: GitHub)"]
+        Analyzer["②AnalyzerAgent<br/>構造化解析<br/>(name/desc/tags/usage/鮮度)<br/>(output_schema)"]
+        Embed["埋め込み生成<br/>(ツール: Vertex AI)"]
+        Dedup["③DeduperAgent<br/>類似度→merge提案<br/>(tools: pgvector/保存)"]
+        Collector --> Analyzer --> Embed --> Dedup
+    end
+
+    subgraph Online["オンライン: 対話 (アプリから起動)"]
+        Searcher["④SearcherAgent<br/>NL→候補(RAG)<br/>(tools: 埋め込み/近傍)"]
+        Composer["⑤ComposerAgent<br/>合成ワークフロー提案<br/>(output_schema)"]
+        Searcher -.候補2件以上で起動.-> Composer
+    end
+```
+
+- オフライン司書は `SequentialAgent`（`Collector → Analyzer → Dedup`）。Collectorのリポジトリごとに Analyzer はリポジトリ内Skill単位で `LoopAgent`/並列化可。
+- ADKの制約: `output_schema` を設定したエージェントは tools を使えない。そのため「構造化出力が要るもの（Analyzer/Composer）」と「ツールを叩くもの（Collector/Dedup/Searcher）」で役割を分けている。
+- 各エージェントは結果を `output_key` で session state に書き、後段がそれを読む契約とする（構造化出力は `output_schema` / Pydantic で固定）。
+- オンラインはアプリのリクエスト時に該当エージェントを `Runner` で起動。合成は Searcher→Composer を機械的に直列化せず、`shared.services` が検索候補を見て必要時に Composer を呼ぶ（Composer は構造化出力で tools を持てないため、制御をサービス層に置くと素直）。
+- モデルは Gemini Flash 既定、重い推論（Composer）のみ Pro 系を使い分け。
+- 鮮度 `needs_update` を検知した Skill には、鮮度判定パイプラインの一部として update 提案（diff）を生成する。
+
+### Agentの流れ（データの受け渡し）
+
+```mermaid
+flowchart LR
+    subgraph Batch["司書バッチ (自律・毎日)"]
+        direction LR
+        C["①Collector"] -->|"raw_skills<br/>(SKILL.md+関連ファイル)"| A["②Analyzer"]
+        A -->|"analyzed_skill<br/>(構造化+鮮度)"| E["埋め込み生成(tool)"]
+        E -->|"vector(768)"| D["③Deduper"]
+        D -->|"merge提案"| DB[("Cloud SQL<br/>+ pgvector")]
+        A -.->|"Skill保存"| DB
+        E -.->|"embedding保存"| DB
+    end
+
+    subgraph App["オンライン (ユーザー操作)"]
+        direction LR
+        Q(["やりたいこと(自然文)"]) --> S["④Searcher"]
+        S -->|"search_result<br/>(候補+確信度+why)"| SVC{"shared.services<br/>候補2件以上?"}
+        SVC -->|"はい"| CO["⑤Composer"]
+        SVC -->|"いいえ"| OUT([検索結果を表示])
+        CO -->|"compose提案"| OUT
+    end
+
+    DB -. 近傍検索 .-> S
+```
+
+- 司書側は「収集→解析→埋め込み→重複検出」を Skill ごとに繰り返し、結果は逐次 Cloud SQL に永続化する（1件失敗しても他Skillは止めない）。
+- オンライン側は `output_key`（`search_result` 等）をサービス層が受け取り、分岐や提案登録を制御する。
+- 提案（merge/compose/update）は `SUGGESTION` に貯まり、提案レビュー画面で採用/却下する。
+
+## アルゴリズム仕様
+
+> 💬 鮮度判定のしきい値、重複検出のしきい値は現時点では暫定値であり、実データを見ながら調整する前提。
+
+### 鮮度判定
+
+コミット経過時間を主軸に、Analyzer（鮮度判定ステップ）が判定する。
+
+| ステータス | 条件 |
+|---|---|
+| `new` | 最終更新が90日以内、かつ依存変更の兆候なし |
+| `stale` | 最終更新が90日超〜180日、または依存記述が古い疑い |
+| `needs_update` | 参照API/依存ツールの変更を検知（Analyzer が SKILL.md 内の参照先と既知の変更を突き合わせ） |
+
+- しきい値（90/180日）は環境変数で調整可能にする。
+- Step 3 で「利用回数」を加えた2軸判定に拡張する。
+
+### 重複・類似検出
+
+- pgvector cosine 類似度で近傍探索。`similarity = 1 - cosine_distance`。
+- しきい値 0.88以上 を重複候補とし、`merge` 提案を生成（過検出回避のため高めに設定、環境変数化）。
+- 自分自身・同一 `source_path` は除外。
+
+### 提案の採用時挙動
+
+- `merge`/`compose`: ステータスを `accepted` に更新する（記録のみ。GitHub への反映は作者が手元で行う）。
+- `update`: diffを「適用済みドラフト」として記録し、対象Skillの `freshness_status` を `new` に戻す（実コミットは作者が手元で実施）。
+- いずれも監査のため `accepted` 履歴（種別・対象・日時）を残す。ログインを設けないため記録は種別・対象・日時の3点とする。
+
+## データモデル（Step 1 で作るもの）
+
+`Repository` / `Skill` / `Skill_Embedding` / `Suggestion` / `Suggestion_Target` の5テーブルを作る。`Skill` の `quality_score` / `quality_breakdown` カラムは Step 3 で追加する。ER 図は [総括のデータモデル](../overview/overview.md#データモデル) を参照。
+
+</script>
+<script>
+const md = document.getElementById('md').textContent;
+const content = document.getElementById('content');
+content.innerHTML = marked.parse(md, {gfm:true, breaks:false});
+
+// 仕様書間のリンクは .md と .html を併設しているので HTML 側へ付け替える
+content.querySelectorAll('a[href]').forEach(a=>{
+  const h=a.getAttribute('href');
+  if(h && !/^https?:/.test(h) && /\.md(#|$)/.test(h)) a.setAttribute('href', h.replace(/\.md(#|$)/, '.html$1'));
+});
+document.querySelectorAll('aside .docs a').forEach(a=>{
+  if(a.dataset.doc==='step1') a.classList.add('current');
+});
+
+const lb=document.getElementById('lb'), stage=document.getElementById('stage');
+let scale=1;
+const apply=()=>{const s=stage.querySelector('svg'); if(s)s.style.transform='scale('+scale+')';};
+function openLB(svg){
+  stage.innerHTML='';
+  const c=svg.cloneNode(true);
+  const vbW=(svg.viewBox&&svg.viewBox.baseVal&&svg.viewBox.baseVal.width)||svg.getBoundingClientRect().width||800;
+  c.removeAttribute('width'); c.removeAttribute('height');
+  c.style.maxWidth='none'; c.style.height='auto'; c.style.width=Math.round(vbW)+'px';
+  stage.appendChild(c); scale=1; apply(); lb.classList.add('open');
+}
+const closeLB=()=>lb.classList.remove('open');
+zin.onclick=()=>{scale=Math.min(scale*1.25,6);apply();};
+zout.onclick=()=>{scale=Math.max(scale/1.25,0.4);apply();};
+zreset.onclick=()=>{scale=1;apply();};
+lbclose.onclick=closeLB;
+lb.addEventListener('click',e=>{if(e.target===lb||e.target===stage)closeLB();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLB();});
+
+content.querySelectorAll('code.language-mermaid').forEach(el=>{
+  const pre=document.createElement('pre'); pre.className='mermaid'; pre.textContent=el.textContent;
+  pre.addEventListener('click',()=>{const svg=pre.querySelector('svg'); if(svg)openLB(svg);});
+  el.parentElement.replaceWith(pre);
+});
+mermaid.initialize({startOnLoad:false, theme:'neutral', securityLevel:'loose',
+  flowchart:{useMaxWidth:true, htmlLabels:true, padding:16},
+  sequence:{useMaxWidth:true},
+  themeVariables:{fontSize:'18px'}});
+mermaid.run({querySelector:'.mermaid'});
+
+const toc=document.getElementById('toc');
+const hs=[...content.querySelectorAll('h2')];
+hs.forEach((h,i)=>{const id='sec'+i; h.id=id;
+  const a=document.createElement('a'); a.href='#'+id; a.textContent=h.textContent; toc.appendChild(a);});
+const links=[...toc.querySelectorAll('a')];
+hs.forEach(h=>{new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
+  links.forEach(l=>l.classList.toggle('active', l.getAttribute('href')==='#'+e.target.id));}});},
+  {rootMargin:'0px 0px -75% 0px'}).observe(h);});
+</script>
+</body>
+</html>
