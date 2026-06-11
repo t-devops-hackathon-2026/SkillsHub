@@ -106,12 +106,21 @@ pre{background:#f6f8fa;color:#1f2328;padding:14px;border-radius:6px;overflow:aut
 .scorebar>i{display:block;height:100%;background:var(--success)}
 .row-sb{display:flex;justify-content:space-between;font-size:12.5px;margin-top:12px}
 .files{list-style:none;padding:0;margin:0;border:1px solid var(--line);border-radius:6px;overflow:hidden}
-.files li{display:flex;align-items:center;gap:10px;font-size:13px;background:var(--card);
-  border-bottom:1px solid var(--line-soft);padding:9px 14px}
+.files li{font-size:13px;background:var(--card);
+  border-bottom:1px solid var(--line-soft)}
 .files li:last-child{border-bottom:0}
+.files .frow{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer}
+.files .frow:hover{background:var(--btn-h)}
 .files .fi{width:18px;text-align:center}
-.files .skillmd{color:var(--accent);font-weight:600}
+.files .fname{color:var(--accent)}
+.files .skillmd{font-weight:600}
 .files .fsz{margin-left:auto;color:var(--muted);font-size:12px;font-family:var(--mono)}
+.files .chev{color:var(--muted);font-size:11px;transition:transform .15s}
+.files li.open .chev{transform:rotate(90deg)}
+.files .fbody{display:none;padding:0 14px 12px}
+.files li.open .fbody{display:block}
+.files .fbody pre{margin:0;max-height:280px;font-size:12px}
+.files .fnone{color:var(--muted);font-size:12px;padding:8px 0}
 
 /* search chat */
 .chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}
@@ -271,27 +280,46 @@ const REPO_BASE="https://github.com/example-corp/";
 let skills = [
   {id:"s1",name:"議事録要約",description:"会議の議事録テキストを受け取り、決定事項・論点・ネクストアクションを構造化して要約する。",source_repo:"ai-tools/skills",source_path:"summarize-minutes/",author:"yamada",tags:["要約","会議","NLP"],last_updated:"2026-05-28",freshness_status:"new",quality_score:88,usage_count:124,
     usage:"議事録の生テキストを渡すと、Markdownの要約と論点リストを返します。`/summarize-minutes` で呼び出し。",
-    files:[["SKILL.md","2.1KB"],["summarize.py","4.8KB"],["prompt.md","1.2KB"]],
+    files:[
+      {name:"SKILL.md",size:"2.1KB",content:"---\nname: summarize-minutes\ndescription: 会議の議事録テキストから決定事項・論点・ネクストアクションを抽出してMarkdownで要約する。\n---\n\n## いつ使うか\n\n議事録の生テキスト（Zoom文字起こし・手書きメモ等）を、構造化された要約として共有したいときに使う。\n\n## 入出力\n\n- 入力: 議事録の本文テキスト\n- 出力: `## 決定事項` / `## 論点` / `## ネクストアクション` を含むMarkdown\n\n## 呼び出し例\n\n```\n/summarize-minutes < minutes.txt\n```\n"},
+      {name:"summarize.py",size:"4.8KB",content:"from anthropic import Anthropic\n\nPROMPT = \"\"\"以下の議事録から、決定事項・論点・ネクストアクションを\n抽出しMarkdownで返してください。\"\"\"\n\ndef summarize(text: str) -> str:\n    client = Anthropic()\n    res = client.messages.create(\n        model=\"claude-opus-4-7\",\n        max_tokens=2000,\n        messages=[{\"role\":\"user\",\"content\":f\"{PROMPT}\\n\\n{text}\"}],\n    )\n    return res.content[0].text\n"},
+      {name:"prompt.md",size:"1.2KB",content:"# 要約プロンプト\n\n- 決定事項は箇条書きで、主語と目的語を省略しない\n- 論点は「未決」のみ列挙し、合意済みは含めない\n- ネクストアクションは「誰が・何を・いつまでに」を必ず明示\n"},
+    ],
     breakdown:{description:90,trigger:85,annotation:88}},
   {id:"s2",name:"タスク抽出",description:"文章中からアクションアイテムを抽出し、担当者・期限・優先度を推定して一覧化する。",source_repo:"ai-tools/skills",source_path:"extract-tasks/",author:"suzuki",tags:["タスク","会議","抽出"],last_updated:"2026-05-20",freshness_status:"new",quality_score:82,usage_count:96,
     usage:"自由文を渡すと担当者別にタスクを分解して返します。議事録要約と組み合わせると効果的。",
-    files:[["SKILL.md","1.9KB"],["extract.py","3.4KB"]],
+    files:[
+      {name:"SKILL.md",size:"1.9KB",content:"---\nname: extract-tasks\ndescription: 自由文からアクションアイテムを抽出し、担当者・期限・優先度を推定して表形式で返す。\n---\n\n## いつ使うか\n\n会議メモやSlackログから、誰が何をいつまでにやるかを一覧化したいとき。\n\n## 出力例\n\n| 担当 | タスク | 期限 | 優先度 |\n|---|---|---|---|\n| yamada | 仕様レビュー | 2026-06-15 | 高 |\n"},
+      {name:"extract.py",size:"3.4KB",content:"import re\nfrom anthropic import Anthropic\n\ndef extract(text: str) -> list[dict]:\n    client = Anthropic()\n    res = client.messages.create(\n        model=\"claude-opus-4-7\",\n        max_tokens=1500,\n        messages=[{\"role\":\"user\",\"content\":f\"次の文章からタスクをJSON配列で抽出:\\n{text}\"}],\n    )\n    return parse_json(res.content[0].text)\n"},
+    ],
     breakdown:{description:84,trigger:80,annotation:82}},
   {id:"s3",name:"データカタログ取得",description:"社内データカタログAPIを叩いてテーブル定義・カラム情報を取得し整形して返す。",source_repo:"data-platform/repo",source_path:"skills/data-catalog/",author:"sato",tags:["データ","API","社内"],last_updated:"2026-03-10",freshness_status:"needs_update",quality_score:71,usage_count:71,
     usage:"テーブル名を渡すとスキーマ定義を返します。※参照先APIの仕様変更により要更新。",
-    files:[["SKILL.md","2.4KB"],["catalog_client.py","6.1KB"],["schema.json","0.8KB"]],
+    files:[
+      {name:"SKILL.md",size:"2.4KB",content:"---\nname: data-catalog\ndescription: 社内データカタログAPIからテーブル定義・カラム情報を取得する。\n---\n\n## 使い方\n\nテーブル名を渡すとスキーマ定義を返します。\n\n⚠️ 参照先APIのバージョンが v1 → v2 に変更されており、現在は動作しません。\n"},
+      {name:"catalog_client.py",size:"6.1KB",content:"import httpx\n\nBASE = \"https://catalog.internal/api\"\n\ndef get_schema(name: str) -> dict:\n    # TODO: v2 への移行が必要\n    url = f\"{BASE}/v1/tables/{name}\"\n    res = httpx.get(url, timeout=10)\n    res.raise_for_status()\n    return res.json()[\"schema\"]\n"},
+      {name:"schema.json",size:"0.8KB",content:"{\n  \"version\": \"1.0\",\n  \"endpoints\": {\n    \"tables\": \"/v1/tables/{name}\",\n    \"columns\": \"/v1/tables/{name}/columns\"\n  }\n}\n"},
+    ],
     breakdown:{description:78,trigger:70,annotation:65}},
   {id:"s4",name:"コードレビュー観点",description:"PRの差分に対して社内のレビュー観点チェックリストを当て、指摘候補を生成する。",source_repo:"dev/code-skills",source_path:"review-checklist/",author:"tanaka",tags:["コード","レビュー","品質"],last_updated:"2026-04-15",freshness_status:"stale",quality_score:76,usage_count:18,
     usage:"diffを渡すと観点別に指摘を返します。観点リストの更新が3週間止まっています。",
-    files:[["SKILL.md","3.0KB"],["checklist.yaml","2.2KB"]],
+    files:[
+      {name:"SKILL.md",size:"3.0KB",content:"---\nname: review-checklist\ndescription: PR差分を社内チェックリストで観点別にレビューする。\n---\n\nPR差分を渡すと、各観点ごとに該当箇所と指摘を返します。\n"},
+      {name:"checklist.yaml",size:"2.2KB",content:"categories:\n  - id: security\n    items:\n      - SQLインジェクション対策\n      - 認可チェックの抜け\n  - id: performance\n    items:\n      - N+1クエリ\n      - 同期I/Oのループ呼び出し\n  - id: readability\n    items:\n      - 過大な関数（50行超）\n      - マジックナンバー\n"},
+    ],
     breakdown:{description:80,trigger:74,annotation:74}},
   {id:"s5",name:"議事録サマリ作成",description:"ミーティングのメモから要点をまとめ、共有用の短い要約文を作る。",source_repo:"personal/horikoshi",source_path:"minutes-summary/",author:"horikoshi",tags:["要約","会議"],last_updated:"2026-02-02",freshness_status:"stale",quality_score:63,usage_count:4,
     usage:"メモを渡すと3行要約を返します。議事録要約Skillと機能が重複している可能性。",
-    files:[["SKILL.md","1.1KB"]],
+    files:[
+      {name:"SKILL.md",size:"1.1KB",content:"---\nname: minutes-summary\ndescription: メモから3行要約を作る。\n---\n\nメモを渡すと3行で要約を返す。\n"},
+    ],
     breakdown:{description:66,trigger:60,annotation:63}},
   {id:"s6",name:"Slack通知整形",description:"任意のテキストをSlack向けのブロック形式に整形し、見やすい通知を生成する。",source_repo:"ai-tools/skills",source_path:"slack-format/",author:"kimura",tags:["Slack","通知","整形"],last_updated:"2026-05-30",freshness_status:"new",quality_score:85,usage_count:57,
     usage:"本文と宛先を渡すとSlackブロックJSONを返します。",
-    files:[["SKILL.md","1.6KB"],["format.py","2.7KB"]],
+    files:[
+      {name:"SKILL.md",size:"1.6KB",content:"---\nname: slack-format\ndescription: テキストをSlack Block Kit形式に整形する。\n---\n\n## いつ使うか\n\nプレーンテキストをSlackへ送るとき、Block Kitで構造化された通知に変換したい場合。\n\n## 入出力\n\n- 入力: 本文テキスト、宛先チャンネル\n- 出力: Block Kit JSON\n"},
+      {name:"format.py",size:"2.7KB",content:"def to_blocks(text: str, channel: str) -> dict:\n    return {\n        \"channel\": channel,\n        \"blocks\": [\n            {\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":text}},\n        ],\n    }\n"},
+    ],
     breakdown:{description:88,trigger:86,annotation:81}},
 ];
 let suggestions = [
@@ -316,6 +344,8 @@ const srcUrl=s=>REPO_BASE+s.source_repo+"/tree/main/"+(s.source_path||"");
 function srcLink(s){return `<a href="${srcUrl(s)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${s.source_repo}/${s.source_path}</a>`;}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200);}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function toggleFile(sid,i){const el=document.getElementById(`f_${sid}_${i}`);if(el)el.classList.toggle("open");}
 
 // ---------- nav ----------
 $$("nav button").forEach(b=>b.onclick=()=>show(b.dataset.v));
@@ -371,8 +401,20 @@ function openDetail(id){
     </div>
     <div class="panel"><h3>使い方（自動生成）</h3><p style="margin:0">${s.usage}</p></div>
     <div class="panel"><h3>Skill 構成ファイル（${s.files.length}）</h3>
-      <ul class="files">${s.files.map(([n,sz])=>`<li><span class="fi">${n==='SKILL.md'?'📘':(/\.py$/.test(n)?'🐍':/\.(yaml|yml|json)$/.test(n)?'⚙️':'📄')}</span><span class="${n==='SKILL.md'?'skillmd':''}">${n}</span><span class="fsz">${sz}</span></li>`).join("")}</ul>
-      <p style="color:var(--muted);font-size:12px;margin:12px 0 0">司書は SKILL.md だけでなく、参照スクリプトや関連ファイルもまとめて取り込みます。</p>
+      <ul class="files">${s.files.map((f,i)=>{
+        const n=f.name,sz=f.size,c=f.content;
+        const ic=n==='SKILL.md'?'📘':(/\.py$/.test(n)?'🐍':/\.(yaml|yml|json)$/.test(n)?'⚙️':'📄');
+        return `<li id="f_${s.id}_${i}">
+          <div class="frow" onclick="toggleFile('${s.id}',${i})">
+            <span class="fi">${ic}</span>
+            <span class="fname ${n==='SKILL.md'?'skillmd':''}">${n}</span>
+            <span class="fsz">${sz}</span>
+            <span class="chev">▶</span>
+          </div>
+          <div class="fbody">${c?`<pre>${escapeHtml(c)}</pre>`:'<div class="fnone">本文は保存されていません（バイナリまたは大容量のため）</div>'}</div>
+        </li>`;
+      }).join("")}</ul>
+      <p style="color:var(--muted);font-size:12px;margin:12px 0 0">ファイル名をクリックすると本文を展開できます。司書が SKILL.md と関連ファイルの本文を同期時に取得・保存しています。</p>
     </div>
     <div class="panel"><h3>品質スコアの内訳</h3>
       ${Object.entries({"説明の明確さ":s.breakdown.description,"トリガー精度":s.breakdown.trigger,"注釈の充実":s.breakdown.annotation}).map(([k,val])=>
@@ -473,7 +515,10 @@ async function runCollect(){
   if(!skillById("s7")){
     skills.unshift({id:"s7",name:"PR要約",description:"プルリクの差分と説明から、レビュー向けの変更サマリを自動生成する。",source_repo:"dev/code-skills",source_path:"pr-summary/",author:"nakamura",tags:["コード","レビュー","要約"],last_updated:"2026-06-05",freshness_status:"new",quality_score:80,usage_count:3,
       usage:"PR番号またはdiffを渡すと、変更点・影響範囲・確認観点を3部構成で返します。",
-      files:[["SKILL.md","2.0KB"],["pr_summary.py","3.1KB"]],
+      files:[
+        {name:"SKILL.md",size:"2.0KB",content:"---\nname: pr-summary\ndescription: PRの差分と説明から、変更点・影響範囲・確認観点を3部構成で要約する。\n---\n\n## いつ使うか\n\nPRレビュー前に、レビュアー向けの変更サマリを自動生成したいとき。\n\n## 出力\n\n- 変更点\n- 影響範囲\n- 確認観点\n"},
+        {name:"pr_summary.py",size:"3.1KB",content:"def summarize_pr(pr_number: int) -> str:\n    diff = fetch_diff(pr_number)\n    body = fetch_body(pr_number)\n    return call_llm(diff, body)\n"},
+      ],
       breakdown:{description:83,trigger:78,annotation:79}});
     suggestions.unshift({id:"g5",type:"compose",skill_ids:["s7","s4"],status:"open",confidence:0.82,content:"新規の「PR要約」と「コードレビュー観点」を連結すると、PRの要約とチェックリスト指摘を一度に出せます。"});
   }
