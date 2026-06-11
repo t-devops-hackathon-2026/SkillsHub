@@ -1,0 +1,54 @@
+name: 機能
+description: ユーザー視点で動くものが増える単位（画面・エージェント・検索機能 など）
+title: "[機能] "
+labels: ["機能"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 1〜2文で「何ができるようになるか」をユーザー視点で
+      placeholder: 例）ダッシュボードでSkill一覧を鮮度バッジ付きで閲覧できる
+    validations:
+      required: true
+
+  - type: textarea
+    id: spec
+    attributes:
+      label: 仕様書の該当箇所
+      description: docs/designs/ 以下の参照先
+      placeholder: |
+        - docs/designs/step1/step1.md の「画面（Step 1 時点）」
+    validations:
+      required: true
+
+  - type: textarea
+    id: dod
+    attributes:
+      label: 完了条件（DoD）
+      description: チェックボックスで具体的に。動作確認の証跡もここに含める
+      value: |
+        - [ ] 〜が画面で確認できる
+        - [ ] 〜がDBに保存される
+        - [ ] 動作確認のスクショ/録画を本issueに添付
+    validations:
+      required: true
+
+  - type: textarea
+    id: verify
+    attributes:
+      label: 動作確認手順
+      placeholder: |
+        1. 〜
+        2. 〜
+    validations:
+      required: true
+
+  - type: textarea
+    id: depends
+    attributes:
+      label: 依存
+      description: 先に必要なissue（#番号でリンク）
+      placeholder: "#12 が先に必要"
+    validations:
+      required: false

@@ -1,0 +1,57 @@
+name: タスク
+description: 環境構築・設定・下準備・調査などの小さな作業単位
+title: "[タスク] "
+labels: ["タスク"]
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 目的 / 調べたいこと
+      description: なぜやるか、何を確かめたいかを1〜2文で
+      placeholder: 例）司書バッチがCloud SQLに繋げるよう接続経路を用意したい
+    validations:
+      required: true
+
+  - type: textarea
+    id: todo
+    attributes:
+      label: やること
+      value: |
+        - [ ] 〜
+        - [ ] 〜
+    validations:
+      required: true
+
+  - type: textarea
+    id: dod
+    attributes:
+      label: 完了条件
+      description: 動くと言える状態、または結論をどこに残すか
+      value: |
+        - [ ] 〜が動く
+        - [ ] 結論をこのissueにコメントで残す
+    validations:
+      required: true
+
+  - type: dropdown
+    id: timebox
+    attributes:
+      label: タイムボックス
+      description: 超えたら一旦止めて相談する
+      options:
+        - 30分
+        - 1時間
+        - 半日
+        - 1日
+    validations:
+      required: true
+
+  - type: textarea
+    id: refs
+    attributes:
+      label: 参考リンク
+      placeholder: |
+        - 仕様書: docs/designs/step1/step1.md
+        - 公式ドキュメント: https://...
+    validations:
+      required: false
