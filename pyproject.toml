@@ -1,0 +1,43 @@
+[project]
+name = "skillshub"
+version = "0.1.0"
+description = "社内 AI Skill ダッシュボード"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "google-adk>=2.2.0",
+    "google-cloud-aiplatform>=1.158.0",
+    "google-cloud-secret-manager>=2.29.0",
+    "httpx>=0.28.1",
+    "pgvector>=0.4.2",
+    "psycopg[binary]>=3.3.4",
+    "pydantic>=2.13.4",
+    "pyjwt>=2.13.0",
+    "python-dotenv>=1.2.2",
+    "sqlalchemy>=2.0.51",
+    "streamlit>=1.58.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "pre-commit>=4.6.0",
+    "pytest>=9.1.0",
+    "ruff>=0.15.17",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["skillshub/tests"]
+pythonpath = ["."]
