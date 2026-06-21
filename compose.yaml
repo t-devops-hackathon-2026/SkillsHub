@@ -1,0 +1,23 @@
+# ローカル開発用 DB（pgvector 入り PostgreSQL）
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: skillhub_user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: skillhub
+    # ホスト側はローカルにインストール済みの PostgreSQL（既定 5432）との衝突を避けて 5433。
+    # コンテナ内部は 5432。接続は .env の DATABASE_URL（127.0.0.1:5433）で行う。
+    ports:
+      - "5433:5432"
+    volumes:
+      - skillhub_pgdata:/var/lib/postgresql/data
+      - ./skillshub/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skillhub_user -d skillhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  skillhub_pgdata:

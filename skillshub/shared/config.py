@@ -9,8 +9,15 @@ load_dotenv()
 
 
 def get_secret(name: str) -> str:
+    """環境変数、なければ Secret Manager から値を取得する。
+
+    仕様: 環境変数が未設定（None）の場合だけでなく、空文字 "" の場合も
+    「未設定」とみなして Secret Manager にフォールバックする。本関数が扱うのは
+    接続文字列や鍵などのシークレットで、空文字が有効な値になることはないため。
+    空文字を有効値として扱いたい用途が将来生じた場合はこの分岐を見直すこと。
+    """
     value = os.environ.get(name)
-    if value is not None:
+    if value:  # None と "" の両方を未設定扱いにする（上記 docstring 参照）
         return value
     return _get_from_secret_manager(name)
 
