@@ -1,5 +1,34 @@
 # SkillsHub（仮称） — 社内Skillsダッシュボード
 
+## ローカル開発
+
+ローカル開発では、ローカルに立てた DB（pgvector 入り PostgreSQL）を使う。staging などのリモート DB には接続しない（共有環境の汚染や認証情報のローカル流出を避けるため）。デプロイ環境のみが Secret Manager 経由で Cloud SQL を参照する。
+
+### セットアップ
+
+```bash
+# 1. 環境変数ファイルを用意（既定で下記ローカル DB を指す）
+cp .env.example .env
+
+# 2. ローカル DB（pgvector）を起動
+docker compose up -d
+
+# 3. 依存をインストール
+uv sync
+```
+
+### 接続確認
+
+```bash
+uv run python -c "from skillshub.shared.db import get_session; s=next(get_session()); s.execute(__import__('sqlalchemy').text('select 1')); print('DB OK')"
+```
+
+`DB OK` が出力されればローカル DB への接続成功。
+
+> テーブル定義（DDL）・シードはこの段階では入らない（空の DB に pgvector 拡張のみ）。スキーマ定義とマイグレーション方式は別 issue で扱う。
+
+---
+
 ## 前提知識：Skillsとは何か
 
 本プロダクトが対象とするSkillsとは、`SKILL.md` のような統一規格で記述され、複数のAIエージェントから呼び出して利用できる再利用可能な機能単位を指す。一つのSkillは、何をするものかを説明する記述（description）、どんなときに使うかを示すトリガー条件、そして実際の処理を担うスクリプトやロジックから構成される。AIエージェントは会話の文脈に応じて適切なSkillを自動的に選び、呼び出して使う。規格やしくみの詳細はAnthropicの公式資料を参照してください。

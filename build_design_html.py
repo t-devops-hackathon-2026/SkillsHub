@@ -2,18 +2,19 @@
 
 使い方: python build_design_html.py
 """
+
 import pathlib
 
-BASE = pathlib.Path(__file__).parent / 'docs' / 'designs'
+BASE = pathlib.Path(__file__).parent / "docs" / "designs"
 
 DOCS = [
-    ('overview/overview.md', 'SkillsHub 設計書（総括）'),
-    ('step1/step1.md', 'Step 1 仕様書: Skill を集めて探せる・重複と陳腐化に気づける'),
-    ('step2/step2.md', 'Step 2 仕様書: Skill の改善提案（diff）を受け取れる'),
-    ('step3/step3.md', 'Step 3 仕様書: 利用状況と品質スコアで Skill の価値を測れる'),
+    ("overview/overview.md", "SkillsHub 設計書（総括）"),
+    ("step1/step1.md", "Step 1 仕様書: Skill を集めて探せる・重複と陳腐化に気づける"),
+    ("step2/step2.md", "Step 2 仕様書: Skill の改善提案（diff）を受け取れる"),
+    ("step3/step3.md", "Step 3 仕様書: 利用状況と品質スコアで Skill の価値を測れる"),
 ]
 
-TEMPLATE = r'''<!DOCTYPE html>
+TEMPLATE = r"""<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -169,17 +170,14 @@ hs.forEach(h=>{new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)
 </script>
 </body>
 </html>
-'''
+"""
 
 for rel, title in DOCS:
     src = BASE / rel
-    md = src.read_text(encoding='utf-8')
-    assert '</script' not in md.lower(), rel
+    md = src.read_text(encoding="utf-8")
+    assert "</script" not in md.lower(), rel
     doc = src.parent.name
-    html = (TEMPLATE
-            .replace('__TITLE__', title)
-            .replace('__DOC__', doc)
-            .replace('__MD__', md))
-    out = src.with_suffix('.html')
-    out.write_text(html, encoding='utf-8')
-    print('wrote', out.relative_to(BASE.parent.parent))
+    html = TEMPLATE.replace("__TITLE__", title).replace("__DOC__", doc).replace("__MD__", md)
+    out = src.with_suffix(".html")
+    out.write_text(html, encoding="utf-8")
+    print("wrote", out.relative_to(BASE.parent.parent))
