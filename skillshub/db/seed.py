@@ -11,6 +11,9 @@
 
 from __future__ import annotations
 
+from typing import Any
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -29,7 +32,7 @@ def _get_or_create_repository(session: Session, *, owner: str, repo: str, instal
     return repository
 
 
-def _get_or_create_skill(session: Session, *, repo_id, name: str, **fields) -> Skill:  # type: ignore[no-untyped-def]
+def _get_or_create_skill(session: Session, *, repo_id: UUID, name: str, **fields: Any) -> Skill:
     existing = session.scalar(select(Skill).where(Skill.repo_id == repo_id, Skill.name == name))
     if existing is not None:
         return existing
