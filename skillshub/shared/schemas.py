@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 # ── Enums ──────────────────────────────────────────────
 
 
-class FreshnessStatus(enum.StrEnum):
-    NEW = "new"
+class UpdateStatus(enum.StrEnum):
+    CURRENT = "current"
     STALE = "stale"
     NEEDS_UPDATE = "needs_update"
 
@@ -27,26 +27,18 @@ class SuggestionStatus(enum.StrEnum):
     DISMISSED = "dismissed"
 
 
-class RepositoryStatus(enum.StrEnum):
-    ACTIVE = "active"
-    ERROR = "error"
-    DISABLED = "disabled"
-
-
 # ── Repository ─────────────────────────────────────────
 
 
 class RepositoryBase(BaseModel):
     owner: str
     repo: str
-    default_branch: str = "main"
     install_id: str | None = None
 
 
 class Repository(RepositoryBase):
     id: UUID
     last_collected_at: datetime | None = None
-    status: RepositoryStatus = RepositoryStatus.ACTIVE
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -68,7 +60,7 @@ class Skill(SkillBase):
     id: UUID
     repo_id: UUID
     last_updated: datetime | None = None
-    freshness_status: FreshnessStatus = FreshnessStatus.NEW
+    update_status: UpdateStatus = UpdateStatus.CURRENT
     content_hash: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -82,8 +74,6 @@ class Skill(SkillBase):
 class SuggestionBase(BaseModel):
     type: SuggestionType
     content: str
-    diff: dict | None = None  # type: ignore[type-arg]
-    confidence: float | None = None
 
 
 class Suggestion(SuggestionBase):

@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from skillshub.shared.config import get_database_url
 
-_engine = None
+_engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
 
-def _get_engine():  # type: ignore[no-untyped-def]
+def _get_engine() -> Engine:
     global _engine  # noqa: PLW0603
     if _engine is None:
         _engine = create_engine(

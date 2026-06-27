@@ -15,6 +15,12 @@ docker compose up -d
 
 # 3. 依存をインストール
 uv sync
+
+# 4. スキーマを適用（Alembic マイグレーション）
+uv run alembic upgrade head
+
+# 5. 初期シードを投入（手動 Skill 2件＋空 Repository 1件・冪等）
+uv run python -m skillshub.db.seed
 ```
 
 ### 接続確認
@@ -25,7 +31,19 @@ uv run python -c "from skillshub.shared.db import get_session; s=next(get_sessio
 
 `DB OK` が出力されればローカル DB への接続成功。
 
-> テーブル定義（DDL）・シードはこの段階では入らない（空の DB に pgvector 拡張のみ）。スキーマ定義とマイグレーション方式は別 issue で扱う。
+### スキーマ／マイグレーション
+
+- スキーマの正は ORM モデル [`skillshub/shared/models.py`](skillshub/shared/models.py)（カラム定義の出典は [`docs/designs/step1/er.md`](docs/designs/step1/er.md)）。
+- マイグレーションは **Alembic**（`skillshub/db/migrations/`）。接続先は `alembic.ini` ではなく `get_database_url()` を正とする（ローカルは `.env`、デプロイ環境は Secret Manager）。
+- 初回起動時、`skillshub/db/init/01_extension.sql` が pgvector 拡張を有効化する。テーブル作成は `alembic upgrade head` が担う（初回マイグレーションも `CREATE EXTENSION IF NOT EXISTS vector` を冪等に実行するため、staging など init を通らない環境でも単体で完結する）。
+- スキーマ変更時はモデルを編集してから自動生成し、差分（特に pgvector の hnsw インデックス等）を確認する:
+
+```bash
+uv run alembic revision --autogenerate -m "変更内容"
+uv run alembic upgrade head
+```
+
+- 作り直したいとき: `docker compose down -v && docker compose up -d` でボリュームごと初期化し、上記セットアップ手順4〜5を再実行する。
 
 ---
 

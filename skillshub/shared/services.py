@@ -6,10 +6,10 @@ from uuid import UUID, uuid4
 from skillshub.shared.schemas import (
     ComposeSuggestion,
     DashboardSummary,
-    FreshnessStatus,
     SearchResult,
     SearchResultItem,
     Skill,
+    UpdateStatus,
 )
 
 _MOCK_REPO_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -26,7 +26,7 @@ def search_skills(query: str) -> SearchResult:
         author="alice",
         tags=["議事録", "要約", "会議"],
         usage="会議の議事録テキストを入力すると、要点を3〜5行に要約します。",
-        freshness_status=FreshnessStatus.NEW,
+        update_status=UpdateStatus.CURRENT,
         last_updated=now,
         created_at=now,
         updated_at=now,
@@ -40,7 +40,7 @@ def search_skills(query: str) -> SearchResult:
         author="bob",
         tags=["タスク", "抽出", "会議"],
         usage="テキストを入力すると、TODO / アクションアイテムをリストアップします。",
-        freshness_status=FreshnessStatus.STALE,
+        update_status=UpdateStatus.STALE,
         last_updated=now,
         created_at=now,
         updated_at=now,
