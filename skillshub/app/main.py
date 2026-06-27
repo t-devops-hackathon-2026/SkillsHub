@@ -4,7 +4,7 @@ from typing import Literal
 
 import streamlit as st
 
-from skillshub.app.views import dashboard
+from skillshub.app.views import dashboard, search
 
 
 def _init_session_state() -> None:
@@ -19,6 +19,7 @@ def _init_session_state() -> None:
             "sort_by": "updated",
         },
         "pending_search_query": "",
+        "accepted_compose_suggestion": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -53,8 +54,7 @@ def _render_content() -> None:
     if view == "dashboard":
         dashboard.render()
     elif view == "search":
-        st.title("🔍 自然言語検索")
-        st.info("検索画面は準備中です（Issue #14）")
+        search.render()
     elif view == "detail":
         st.title("📄 Skill 詳細")
         st.info(f"詳細画面は準備中です（Issue #15）  ·  Skill ID: {st.session_state.selected_skill_id}")
