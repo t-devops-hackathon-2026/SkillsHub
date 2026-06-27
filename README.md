@@ -16,12 +16,11 @@ docker compose up -d
 # 3. 依存をインストール
 uv sync
 
-# 4. スキーマを適用（Alembic マイグレーション）
-uv run alembic upgrade head
-
-# 5. 初期シードを投入（手動 Skill 2件＋空 Repository 1件・冪等）
-uv run python -m skillshub.db.seed
+# 4. スキーマ適用＋初期シード投入（マイグレーション→seed をまとめて実行）
+./scripts/migrate.sh
 ```
+
+> `scripts/migrate.sh` は `alembic upgrade head` と `python -m skillshub.db.seed`（手動 Skill 2件＋空 Repository 1件・冪等）を順に流すだけのラッパ。個別に流したい場合は `uv run alembic upgrade head` / `uv run python -m skillshub.db.seed` を直接実行してもよい。staging では同じ `migrate.sh` を Cloud Run Job のコマンドとして使う。
 
 ### 接続確認
 
@@ -43,7 +42,8 @@ uv run alembic revision --autogenerate -m "変更内容"
 uv run alembic upgrade head
 ```
 
-- 作り直したいとき: `docker compose down -v && docker compose up -d` でボリュームごと初期化し、上記セットアップ手順4〜5を再実行する。
+- 作り直したいとき: `docker compose down -v && docker compose up -d` でボリュームごと初期化し、`./scripts/migrate.sh` を再実行する。
+- staging（Cloud SQL / private IP）への適用は、同じ `migrate.sh` を `Dockerfile` でイメージ化し、VPC コネクタ付きの Cloud Run Job として流す（public IP 開放は不要）。
 
 ---
 
