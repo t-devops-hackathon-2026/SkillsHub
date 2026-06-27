@@ -5,6 +5,7 @@ description = "社内 AI Skill ダッシュボード"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.18.5",
     "google-adk>=2.2.0",
     "google-cloud-aiplatform>=1.158.0",
     "google-cloud-secret-manager>=2.29.0",
@@ -29,6 +30,8 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+# Alembic が自動生成するマイグレーションは整形・lint の対象外（手で整えない）。
+extend-exclude = ["skillshub/db/migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
@@ -37,6 +40,12 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
+exclude = ["skillshub/db/migrations/"]
+
+[[tool.mypy.overrides]]
+# pgvector は型スタブ(py.typed)を同梱していないため import-untyped を抑制。
+module = "pgvector.*"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["skillshub/tests"]

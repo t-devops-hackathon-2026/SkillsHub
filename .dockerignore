@@ -1,0 +1,14 @@
+# ビルドコンテキストから除外（イメージを小さく・秘密を持ち込まない）
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.claude
+docs
+*.md
+!README.md
