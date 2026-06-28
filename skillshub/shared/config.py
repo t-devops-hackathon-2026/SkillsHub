@@ -45,3 +45,18 @@ def _get_sm_client():  # type: ignore[no-untyped-def]
 
 def get_database_url() -> str:
     return get_secret("DATABASE_URL")
+
+
+# 重複検出の類似度しきい値。過検出回避のため高め（0.88）を既定にし、環境変数で調整可能にする。
+_DEFAULT_DEDUP_THRESHOLD = 0.88
+
+
+def get_dedup_threshold() -> float:
+    """重複検出の cosine 類似度しきい値を取得する（既定 0.88、env ``DEDUP_THRESHOLD``）。
+
+    env 未設定・空文字の場合は既定値を使う（get_secret と同じく空文字は未設定扱い）。
+    """
+    value = os.environ.get("DEDUP_THRESHOLD")
+    if not value:
+        return _DEFAULT_DEDUP_THRESHOLD
+    return float(value)
