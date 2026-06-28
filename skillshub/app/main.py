@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import streamlit as st
 
 from skillshub.app.views import dashboard
@@ -25,10 +27,10 @@ def _init_session_state() -> None:
 
 def _render_sidebar() -> None:
     nav_items = [
-        ("dashboard",   "🏠 ダッシュボード"),
-        ("search",      "🔍 自然言語検索"),
+        ("dashboard", "🏠 ダッシュボード"),
+        ("search", "🔍 自然言語検索"),
         ("suggestions", "💡 提案レビュー"),
-        ("repos",       "📦 リポジトリ登録"),
+        ("repos", "📦 リポジトリ登録"),
     ]
 
     with st.sidebar:
@@ -37,7 +39,9 @@ def _render_sidebar() -> None:
         st.divider()
 
         for key, label in nav_items:
-            btn_type = "primary" if st.session_state.current_view == key else "secondary"
+            btn_type: Literal["primary", "secondary"] = (
+                "primary" if st.session_state.current_view == key else "secondary"
+            )
             if st.button(label, key=f"nav_{key}", use_container_width=True, type=btn_type):
                 st.session_state.current_view = key
                 st.rerun()

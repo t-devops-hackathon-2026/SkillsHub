@@ -199,10 +199,9 @@ def list_skills(
     if keyword:
         kw = keyword.lower()
         result = [
-            s for s in result
-            if kw in s.name.lower()
-            or kw in s.description.lower()
-            or any(kw in t.lower() for t in s.tags)
+            s
+            for s in result
+            if kw in s.name.lower() or kw in s.description.lower() or any(kw in t.lower() for t in s.tags)
         ]
 
     if freshness:
