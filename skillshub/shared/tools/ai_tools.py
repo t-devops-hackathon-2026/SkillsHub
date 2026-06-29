@@ -16,6 +16,7 @@ CLI 動作確認:
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -26,12 +27,15 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from skillshub.shared.models import Skill, SkillEmbedding, Suggestion, SuggestionTarget
-from skillshub.shared.schemas import SuggestionType
+from skillshub.shared.schemas import ComposeSuggestion, SuggestionType
 
 # ── 定数・型 ────────────────────────────────────────────
 
 # 日英混在対応の多言語埋め込みモデル（768 次元）。
 EMBEDDING_MODEL = "text-multilingual-embedding-002"
+
+# 検索の推薦理由（why）生成に使う既定モデル。仕様の「Flash 既定 / 重い推論のみ Pro」に従い Flash。
+SEARCH_REASON_MODEL = "gemini-2.5-flash"
 
 # テキスト → ベクトルの関数型。既定は Vertex AI だが、テストでは決定論的な
 # フェイクを差し込めるように注入可能にしておく（dependency injection）。
@@ -119,6 +123,66 @@ def find_similar_skills(
     return [(row.skill_id, float(row.similarity)) for row in rows if row.similarity >= threshold]
 
 
+# ── 検索（オンライン: クエリ→候補）──────────────────────
+
+
+def search_similar_skills(
+    session: Session,
+    query_embedding: list[float],
+    *,
+    top_k: int = 3,
+    threshold: float = 0.0,
+) -> list[tuple[UUID, float]]:
+    """クエリ埋め込みに対する近傍 Skill を similarity 降順で最大 top_k 件返す（意味検索）。
+
+    重複検出用の ``find_similar_skills`` と異なり、自分自身・同一 ``source_path`` の
+    除外はしない（検索は全 Skill が対象）。``similarity = 1 - cosine_distance``。
+    ``threshold`` 未満は落とす（既定 0.0 = フィルタなし。負の類似度のみ除外したい等で利用）。
+    """
+    distance = SkillEmbedding.embedding.cosine_distance(query_embedding)
+    similarity = (1 - distance).label("similarity")
+    stmt = select(SkillEmbedding.skill_id, similarity).order_by(distance).limit(top_k)
+    rows = session.execute(stmt).all()
+    return [(row.skill_id, float(row.similarity)) for row in rows if row.similarity >= threshold]
+
+
+def generate_search_reasons(query: str, skills: list[Skill], model: str = SEARCH_REASON_MODEL) -> list[str]:
+    """各候補 Skill について、クエリに対する推薦理由（why）を Gemini Flash で生成する。
+
+    候補をまとめて 1 回の呼び出しで処理し、入力と同順・同数の理由リストを返す。
+    ``vertexai`` は関数内で遅延 import する（GCP 認証が無い環境では本関数を呼ばない）。
+    呼び出し側（``run_searcher``）は本関数が失敗した場合テンプレートにフォールバックする。
+    """
+    from vertexai.generative_models import GenerationConfig, GenerativeModel
+
+    numbered = "\n".join(f"{i}. 名前: {s.name} / 説明: {s.description}" for i, s in enumerate(skills))
+    prompt = (
+        "あなたは社内 Skill 検索の推薦理由を書くアシスタントです。\n"
+        f"ユーザーのやりたいこと（クエリ）: 「{query}」\n\n"
+        "次の各候補について、なぜこのクエリに合致するのかを日本語1〜2文で簡潔に説明してください。\n"
+        f"{numbered}\n\n"
+        '出力は {"reasons": ["理由0", "理由1", ...]} の JSON のみ。配列は候補と同じ順序・同じ件数にすること。'
+    )
+    schema = {
+        "type": "object",
+        "properties": {"reasons": {"type": "array", "items": {"type": "string"}}},
+        "required": ["reasons"],
+    }
+    response = GenerativeModel(model).generate_content(
+        prompt,
+        generation_config=GenerationConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+            temperature=0.2,
+        ),
+    )
+    data = json.loads(response.text)
+    reasons = data.get("reasons")
+    if not isinstance(reasons, list):
+        raise ValueError("Gemini の応答に reasons 配列が含まれていません")
+    return [str(r) for r in reasons]
+
+
 # ── merge 提案の生成 ────────────────────────────────────
 
 
@@ -164,6 +228,27 @@ def create_merge_suggestion(
             SuggestionTarget(suggestion_id=suggestion.id, skill_id=skill_a.id),
             SuggestionTarget(suggestion_id=suggestion.id, skill_id=skill_b.id),
         ]
+    )
+    return suggestion.id
+
+
+# ── compose 提案の生成 ──────────────────────────────────
+
+
+def create_compose_suggestion(session: Session, compose: ComposeSuggestion) -> UUID:
+    """合成提案（suggestion + suggestion_target N 行）を保存し、新規 id を返す。
+
+    merge と異なり対象 Skill は可変個（候補全件）なので targets を複数作る。検索画面（#19）の
+    「採用」操作から呼ぶ想定で、``search_skills`` は提案を返すだけで保存しない（毎回の検索で
+    提案が増えないよう、保存はユーザーの採用操作に限定する）。
+    """
+    content = f"{compose.title}\n\n{compose.body}"
+    suggestion = Suggestion(type=SuggestionType.COMPOSE, content=content)
+    session.add(suggestion)
+    session.flush()  # id を採番してから target に紐付ける
+
+    session.add_all(
+        [SuggestionTarget(suggestion_id=suggestion.id, skill_id=skill_id) for skill_id in compose.target_skill_ids]
     )
     return suggestion.id
 
