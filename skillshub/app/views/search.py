@@ -28,15 +28,15 @@ _GREETING: str = (
     "（例: 議事録を要約したい）"
 )
 
-_FRESHNESS_CONFIG: dict[UpdateStatus, tuple[str, str, str]] = {
+_UPDATE_STATUS_CONFIG: dict[UpdateStatus, tuple[str, str, str]] = {
     UpdateStatus.CURRENT:      ("最新",   "#dafbe1", "#1a7f37"),
     UpdateStatus.STALE:        ("要注意", "#fff8c5", "#9a6700"),
     UpdateStatus.NEEDS_UPDATE: ("要更新", "#ffebe9", "#cf222e"),
 }
 
 
-def _freshness_badge(status: UpdateStatus) -> str:
-    label, bg, color = _FRESHNESS_CONFIG[status]
+def _update_status_badge(status: UpdateStatus) -> str:
+    label, bg, color = _UPDATE_STATUS_CONFIG[status]
     return (
         f'<span style="background:{bg};color:{color};padding:2px 10px;'
         f'border-radius:12px;font-size:12px;font-weight:600;display:inline-block">'
@@ -68,7 +68,7 @@ def _accept_compose(compose: ComposeSuggestion) -> None:
 def _render_item_card(item: SearchResultItem, key_prefix: str) -> None:
     skill = item.skill
     with st.container(border=True):
-        st.markdown(_freshness_badge(skill.update_status), unsafe_allow_html=True)
+        st.markdown(_update_status_badge(skill.update_status), unsafe_allow_html=True)
 
         if st.button(
             skill.name,

@@ -90,7 +90,7 @@ def list_all_tags() -> list[str]:
 
 def list_skills(
     keyword: str = "",
-    freshness: str = "",
+    update_status: str = "",
     tags: list[str] | None = None,
     sort_by: str = "updated",
 ) -> list[Skill]:
@@ -98,8 +98,8 @@ def list_skills(
     with Session(_get_engine()) as session:
         # 現状サポートするソートは更新日順のみ。並び順を増やす場合はここに分岐を追加する。
         stmt = select(models.Skill).order_by(models.Skill.updated_at.desc())
-        if freshness:
-            stmt = stmt.where(models.Skill.update_status == UpdateStatus(freshness).value)
+        if update_status:
+            stmt = stmt.where(models.Skill.update_status == UpdateStatus(update_status).value)
         rows = session.scalars(stmt).all()
         result = [Skill.model_validate(r) for r in rows]
 

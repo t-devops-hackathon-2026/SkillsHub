@@ -14,7 +14,7 @@ def _init_session_state() -> None:
         "chat_history": [],
         "filters": {
             "keyword": "",
-            "freshness": "",
+            "update_status": "",
             "tags": [],
             "sort_by": "updated",
         },

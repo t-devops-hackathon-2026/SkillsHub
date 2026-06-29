@@ -32,7 +32,7 @@ def compute_update_status(
     """最終コミット日時と古さ兆候から ``update_status`` を決める。
 
     - 古さ兆候あり → ``needs_update``（日数に関わらず最優先）
-    - 経過 ≤ FRESHNESS_STALE_DAYS(既定90) → ``current``
+    - 経過 ≤ UPDATE_STALE_DAYS(既定90) → ``current``
     - それ以外（しきい値超）→ ``stale``
     - コミット日時不明 → 安全側で ``stale``
     """
@@ -42,7 +42,7 @@ def compute_update_status(
     if last_commit_at is None:
         return UpdateStatus.STALE
 
-    stale_days = _env_int("FRESHNESS_STALE_DAYS", _DEFAULT_STALE_DAYS)
+    stale_days = _env_int("UPDATE_STALE_DAYS", _DEFAULT_STALE_DAYS)
 
     now = datetime.now(UTC)
     # naive datetime が来た場合は UTC とみなして比較する。

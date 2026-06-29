@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from skillshub.shared.freshness import compute_update_status
+from skillshub.shared.update_status import compute_update_status
 from skillshub.shared.schemas import UpdateStatus
 
 
@@ -15,7 +15,7 @@ def _days_ago(days: int) -> datetime:
 @pytest.fixture(autouse=True)
 def _default_thresholds(monkeypatch: pytest.MonkeyPatch) -> None:
     # 既定しきい値（90）を明示設定し、開発環境の .env に依存しないようにする。
-    monkeypatch.setenv("FRESHNESS_STALE_DAYS", "90")
+    monkeypatch.setenv("UPDATE_STALE_DAYS", "90")
 
 
 @pytest.mark.unit
@@ -54,6 +54,6 @@ def test_missing_commit_date_with_outdated_flag_is_needs_update() -> None:
 
 @pytest.mark.unit
 def test_thresholds_are_env_overridable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FRESHNESS_STALE_DAYS", "30")
+    monkeypatch.setenv("UPDATE_STALE_DAYS", "30")
     # 既定(90)なら current だが、しきい値 30 では stale になる。
     assert compute_update_status(_days_ago(45), is_possibly_outdated=False) == UpdateStatus.STALE

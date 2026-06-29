@@ -269,27 +269,27 @@ table.repos th{color:var(--muted);font-weight:600;font-size:12px;background:var(
 // ---------- mock data ----------
 const REPO_BASE="https://github.com/example-corp/";
 let skills = [
-  {id:"s1",name:"議事録要約",description:"会議の議事録テキストを受け取り、決定事項・論点・ネクストアクションを構造化して要約する。",source_repo:"ai-tools/skills",source_path:"summarize-minutes/",author:"yamada",tags:["要約","会議","NLP"],last_updated:"2026-05-28",freshness_status:"new",quality_score:88,
+  {id:"s1",name:"議事録要約",description:"会議の議事録テキストを受け取り、決定事項・論点・ネクストアクションを構造化して要約する。",source_repo:"ai-tools/skills",source_path:"summarize-minutes/",author:"yamada",tags:["要約","会議","NLP"],last_updated:"2026-05-28",update_status:"new",quality_score:88,
     usage:"議事録の生テキストを渡すと、Markdownの要約と論点リストを返します。`/summarize-minutes` で呼び出し。",
     files:[["SKILL.md","2.1KB"],["summarize.py","4.8KB"],["prompt.md","1.2KB"]],
     breakdown:{description:90,trigger:85,annotation:88}},
-  {id:"s2",name:"タスク抽出",description:"文章中からアクションアイテムを抽出し、担当者・期限・優先度を推定して一覧化する。",source_repo:"ai-tools/skills",source_path:"extract-tasks/",author:"suzuki",tags:["タスク","会議","抽出"],last_updated:"2026-05-20",freshness_status:"new",quality_score:82,
+  {id:"s2",name:"タスク抽出",description:"文章中からアクションアイテムを抽出し、担当者・期限・優先度を推定して一覧化する。",source_repo:"ai-tools/skills",source_path:"extract-tasks/",author:"suzuki",tags:["タスク","会議","抽出"],last_updated:"2026-05-20",update_status:"new",quality_score:82,
     usage:"自由文を渡すと担当者別にタスクを分解して返します。議事録要約と組み合わせると効果的。",
     files:[["SKILL.md","1.9KB"],["extract.py","3.4KB"]],
     breakdown:{description:84,trigger:80,annotation:82}},
-  {id:"s3",name:"データカタログ取得",description:"社内データカタログAPIを叩いてテーブル定義・カラム情報を取得し整形して返す。",source_repo:"data-platform/repo",source_path:"skills/data-catalog/",author:"sato",tags:["データ","API","社内"],last_updated:"2026-03-10",freshness_status:"needs_update",quality_score:71,
+  {id:"s3",name:"データカタログ取得",description:"社内データカタログAPIを叩いてテーブル定義・カラム情報を取得し整形して返す。",source_repo:"data-platform/repo",source_path:"skills/data-catalog/",author:"sato",tags:["データ","API","社内"],last_updated:"2026-03-10",update_status:"needs_update",quality_score:71,
     usage:"テーブル名を渡すとスキーマ定義を返します。※参照先APIの仕様変更により要更新。",
     files:[["SKILL.md","2.4KB"],["catalog_client.py","6.1KB"],["schema.json","0.8KB"]],
     breakdown:{description:78,trigger:70,annotation:65}},
-  {id:"s4",name:"コードレビュー観点",description:"PRの差分に対して社内のレビュー観点チェックリストを当て、指摘候補を生成する。",source_repo:"dev/code-skills",source_path:"review-checklist/",author:"tanaka",tags:["コード","レビュー","品質"],last_updated:"2026-04-15",freshness_status:"stale",quality_score:76,
+  {id:"s4",name:"コードレビュー観点",description:"PRの差分に対して社内のレビュー観点チェックリストを当て、指摘候補を生成する。",source_repo:"dev/code-skills",source_path:"review-checklist/",author:"tanaka",tags:["コード","レビュー","品質"],last_updated:"2026-04-15",update_status:"stale",quality_score:76,
     usage:"diffを渡すと観点別に指摘を返します。観点リストの更新が3週間止まっています。",
     files:[["SKILL.md","3.0KB"],["checklist.yaml","2.2KB"]],
     breakdown:{description:80,trigger:74,annotation:74}},
-  {id:"s5",name:"議事録サマリ作成",description:"ミーティングのメモから要点をまとめ、共有用の短い要約文を作る。",source_repo:"personal/horikoshi",source_path:"minutes-summary/",author:"horikoshi",tags:["要約","会議"],last_updated:"2026-02-02",freshness_status:"stale",quality_score:63,
+  {id:"s5",name:"議事録サマリ作成",description:"ミーティングのメモから要点をまとめ、共有用の短い要約文を作る。",source_repo:"personal/horikoshi",source_path:"minutes-summary/",author:"horikoshi",tags:["要約","会議"],last_updated:"2026-02-02",update_status:"stale",quality_score:63,
     usage:"メモを渡すと3行要約を返します。議事録要約Skillと機能が重複している可能性。",
     files:[["SKILL.md","1.1KB"]],
     breakdown:{description:66,trigger:60,annotation:63}},
-  {id:"s6",name:"Slack通知整形",description:"任意のテキストをSlack向けのブロック形式に整形し、見やすい通知を生成する。",source_repo:"ai-tools/skills",source_path:"slack-format/",author:"kimura",tags:["Slack","通知","整形"],last_updated:"2026-05-30",freshness_status:"new",quality_score:85,
+  {id:"s6",name:"Slack通知整形",description:"任意のテキストをSlack向けのブロック形式に整形し、見やすい通知を生成する。",source_repo:"ai-tools/skills",source_path:"slack-format/",author:"kimura",tags:["Slack","通知","整形"],last_updated:"2026-05-30",update_status:"new",quality_score:85,
     usage:"本文と宛先を渡すとSlackブロックJSONを返します。",
     files:[["SKILL.md","1.6KB"],["format.py","2.7KB"]],
     breakdown:{description:88,trigger:86,annotation:81}},
@@ -338,11 +338,11 @@ function renderGrid(){
   const q=$("#q").value.trim(),fs=$("#fStatus").value,ft=$("#fTag").value,sort=$("#sort").value;
   let list=skills.filter(s=>{
     const hay=(s.name+s.description+s.tags.join("")).toLowerCase();
-    return (!q||hay.includes(q.toLowerCase()))&&(!fs||s.freshness_status===fs)&&(!ft||s.tags.includes(ft));
+    return (!q||hay.includes(q.toLowerCase()))&&(!fs||s.update_status===fs)&&(!ft||s.tags.includes(ft));
   });
   list.sort((a,b)=> b.last_updated.localeCompare(a.last_updated));
   $("#grid").innerHTML = list.length? list.map(s=>{
-    const[bc,bt]=badge(s.freshness_status);
+    const[bc,bt]=badge(s.update_status);
     return `<div class="card" onclick="openDetail('${s.id}')">
       <div class="meta" style="margin-bottom:10px"><span class="badge ${bc}">${bt}</span></div>
       <h3>${s.name}</h3><p>${s.description}</p>
@@ -356,7 +356,7 @@ function renderGrid(){
 
 // ---------- detail ----------
 function openDetail(id){
-  const s=skillById(id);const[bc,bt]=badge(s.freshness_status);
+  const s=skillById(id);const[bc,bt]=badge(s.update_status);
   const sug=suggestions.filter(x=>x.skill_ids.includes(id)&&x.status==="open");
   $("#detail").innerHTML=`
     <button class="back" onclick="show('dash')">← 一覧へ戻る</button>
@@ -410,7 +410,7 @@ function renderSuggestions(){
 }
 function resolveSug(id,st){
   const s=suggestions.find(x=>x.id===id);s.status=st;
-  if(st==="accepted"&&s.type==="update"){ s.skill_ids.forEach(sid=>{const sk=skillById(sid);if(sk){sk.freshness_status="new";sk.last_updated="2026-06-05";}}); }
+  if(st==="accepted"&&s.type==="update"){ s.skill_ids.forEach(sid=>{const sk=skillById(sid);if(sk){sk.update_status="new";sk.last_updated="2026-06-05";}}); }
   toast(st==="accepted"?"提案を採用しました":"提案を却下しました");
   renderSuggestions();renderGrid();
 }
@@ -460,7 +460,7 @@ async function runCollect(){
   }
   await sleep(350);
   if(!skillById("s7")){
-    skills.unshift({id:"s7",name:"PR要約",description:"プルリクの差分と説明から、レビュー向けの変更サマリを自動生成する。",source_repo:"dev/code-skills",source_path:"pr-summary/",author:"nakamura",tags:["コード","レビュー","要約"],last_updated:"2026-06-05",freshness_status:"new",quality_score:80,
+    skills.unshift({id:"s7",name:"PR要約",description:"プルリクの差分と説明から、レビュー向けの変更サマリを自動生成する。",source_repo:"dev/code-skills",source_path:"pr-summary/",author:"nakamura",tags:["コード","レビュー","要約"],last_updated:"2026-06-05",update_status:"new",quality_score:80,
       usage:"PR番号またはdiffを渡すと、変更点・影響範囲・確認観点を3部構成で返します。",
       files:[["SKILL.md","2.0KB"],["pr_summary.py","3.1KB"]],
       breakdown:{description:83,trigger:78,annotation:79}});
@@ -489,7 +489,7 @@ function bubble(role,who,html){
 }
 function reasonFor(s,t){
   const hit=s.tags.filter(tg=>t.includes(tg.toLowerCase()));
-  if(hit.length)return `「${hit[0]}」の用途に合致し、`+ (s.freshness_status==="new"?"鮮度も最新です。":"説明とトリガーが要求に近いです。");
+  if(hit.length)return `「${hit[0]}」の用途に合致し、`+ (s.update_status==="new"?"鮮度も最新です。":"説明とトリガーが要求に近いです。");
   return "説明とトリガー条件が要求内容に近いと判断しました。";
 }
 async function runSearch(text){
@@ -509,7 +509,7 @@ async function runSearch(text){
   const top=scored.length>=2?Math.round(85+Math.random()*10):Math.round(70+Math.random()*10);
   let html=`<div style="display:flex;justify-content:space-between;align-items:center"><strong>${scored.length}件のSkillsが見つかりました</strong><span class="conf">確信度 ${top}%</span></div>`;
   html+=scored.map(({s})=>{
-    const[bc,bt]=badge(s.freshness_status);
+    const[bc,bt]=badge(s.update_status);
     return `<div class="card" style="margin-top:11px" onclick="openDetail('${s.id}')">
       <div class="meta" style="margin-bottom:7px"><span class="badge ${bc}">${bt}</span></div>
       <h3>${s.name}</h3><p>${s.description}</p>

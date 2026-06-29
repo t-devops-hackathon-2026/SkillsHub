@@ -21,7 +21,7 @@ from google.genai import types
 
 from skillshub.shared.agents.analyzer import analyze_skill, draft_update
 from skillshub.shared.agents.collector import DEFAULT_OUTPUT_KEY, CollectorAgent
-from skillshub.shared.freshness import compute_update_status
+from skillshub.shared.update_status import compute_update_status
 from skillshub.shared.schemas import AnalyzedSkill, RawSkill, UpdateStatus
 
 _APP_NAME = "skillshub-librarian"
