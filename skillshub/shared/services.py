@@ -271,6 +271,71 @@ def get_or_create_repository(owner: str, repo: str) -> UUID:
         return repository.id
 
 
+def _persist_analyzed_skill(
+    session: Session,
+    repo_id: UUID,
+    raw: RawSkill,
+    analyzed: AnalyzedSkill,
+    update_status: UpdateStatus,
+    update_draft: str | None,
+) -> tuple[models.Skill, bool]:
+    """Skill の upsert と（needs_update 時の）update 提案保存を、与えられた session 上で行う。
+
+    コミットはしない（呼び出し側の責務）。収集パイプライン（``librarian``）では、この後の
+    埋め込み生成・重複検出と同一トランザクションにまとめたいため、session を外から受け取る。
+    永続化した Skill と、update 提案を新規保存したかどうか（bool）を返す。
+
+    再収集のたびに、同じ Skill を指す既存の open な update 提案は一旦すべて dismiss する。
+    これにより (1) needs_update 継続時は最新の下書きだけを open に残し、(2) needs_update から
+    current/stale へ戻ったときは不要な提案を open のまま残さない。
+    """
+    skill = session.scalar(
+        select(models.Skill).where(models.Skill.repo_id == repo_id, models.Skill.source_path == raw.source_path)
+    )
+    is_new = skill is None
+    if skill is None:
+        skill = models.Skill(repo_id=repo_id, source_path=raw.source_path)
+        session.add(skill)
+
+    skill.name = analyzed.name
+    skill.description = analyzed.description
+    skill.tags = analyzed.tags
+    skill.usage = analyzed.usage
+    skill.author = raw.author
+    skill.last_updated = raw.last_commit_at
+    skill.update_status = update_status.value
+    skill.content_hash = raw.content_hash
+
+    session.flush()  # 新規 Skill の id を採番 / 既存提案の探索にも id が要る
+
+    # 同じ Skill を指す既存の open な update 提案は、今回のステータスに関わらず一旦 dismiss する。
+    # needs_update 継続時は直後に最新の下書きを open で作り直し、current/stale へ戻ったときは
+    # 不要な提案を open のまま残さない。新規 Skill には既存提案が無いのでスキップ。
+    if not is_new:
+        stale_updates = session.scalars(
+            select(models.Suggestion)
+            .join(models.SuggestionTarget, models.SuggestionTarget.suggestion_id == models.Suggestion.id)
+            .where(
+                models.SuggestionTarget.skill_id == skill.id,
+                models.Suggestion.type == "update",
+                models.Suggestion.status == "open",
+            )
+            .order_by(models.Suggestion.created_at)
+        ).all()
+        for stale in stale_updates:
+            stale.status = "dismissed"
+
+    saved_suggestion = False
+    if update_status is UpdateStatus.NEEDS_UPDATE and update_draft:
+        suggestion = models.Suggestion(type="update", content=update_draft, status="open")
+        session.add(suggestion)
+        session.flush()  # suggestion の id 採番後にブリッジを張る
+        session.add(models.SuggestionTarget(suggestion_id=suggestion.id, skill_id=skill.id))
+        saved_suggestion = True
+
+    return skill, saved_suggestion
+
+
 def persist_analyzed_skill(
     repo_id: UUID,
     raw: RawSkill,
@@ -278,60 +343,15 @@ def persist_analyzed_skill(
     update_status: UpdateStatus,
     update_draft: str | None,
 ) -> bool:
-    """Skill の upsert と（needs_update 時の）update 提案保存を1トランザクションで行う。
+    """単体の Skill 永続化（自前 session で1トランザクション）。
 
-    Skill だけ保存されて提案が欠ける不整合を防ぐため、両書き込みを同一 Session・同一
-    コミットにまとめる（途中失敗時はまとめてロールバックされる）。再収集のたびに、同じ
-    Skill を指す既存の open な update 提案は一旦すべて dismiss する。これにより
-    (1) needs_update 継続時は最新の下書きだけを open に残し、(2) needs_update から
-    current/stale へ戻ったときは不要な提案を open のまま残さない。update 提案を新規に
-    保存した場合のみ True を返す。
+    Skill だけ保存されて提案が欠ける不整合を防ぐため、Skill と update 提案の書き込みを
+    同一コミットにまとめる（途中失敗時はまとめてロールバック）。update 提案を新規に保存した
+    場合のみ True を返す。収集パイプラインからは埋め込み・重複検出と同一 session にまとめたい
+    ため ``_persist_analyzed_skill`` を直接使う。
     """
     with Session(_get_engine()) as session:
-        skill = session.scalar(
-            select(models.Skill).where(models.Skill.repo_id == repo_id, models.Skill.source_path == raw.source_path)
-        )
-        is_new = skill is None
-        if is_new:
-            skill = models.Skill(repo_id=repo_id, source_path=raw.source_path)
-            session.add(skill)
-
-        skill.name = analyzed.name
-        skill.description = analyzed.description
-        skill.tags = analyzed.tags
-        skill.usage = analyzed.usage
-        skill.author = raw.author
-        skill.last_updated = raw.last_commit_at
-        skill.update_status = update_status.value
-        skill.content_hash = raw.content_hash
-
-        session.flush()  # 新規 Skill の id を採番 / 既存提案の探索にも id が要る
-
-        # 同じ Skill を指す既存の open な update 提案は、今回のステータスに関わらず一旦 dismiss する。
-        # needs_update 継続時は直後に最新の下書きを open で作り直し、current/stale へ戻ったときは
-        # 不要な提案を open のまま残さない。新規 Skill には既存提案が無いのでスキップ。
-        if not is_new:
-            stale_updates = session.scalars(
-                select(models.Suggestion)
-                .join(models.SuggestionTarget, models.SuggestionTarget.suggestion_id == models.Suggestion.id)
-                .where(
-                    models.SuggestionTarget.skill_id == skill.id,
-                    models.Suggestion.type == "update",
-                    models.Suggestion.status == "open",
-                )
-                .order_by(models.Suggestion.created_at)
-            ).all()
-            for stale in stale_updates:
-                stale.status = "dismissed"
-
-        saved_suggestion = False
-        if update_status is UpdateStatus.NEEDS_UPDATE and update_draft:
-            suggestion = models.Suggestion(type="update", content=update_draft, status="open")
-            session.add(suggestion)
-            session.flush()  # suggestion の id 採番後にブリッジを張る
-            session.add(models.SuggestionTarget(suggestion_id=suggestion.id, skill_id=skill.id))
-            saved_suggestion = True
-
+        _skill, saved_suggestion = _persist_analyzed_skill(session, repo_id, raw, analyzed, update_status, update_draft)
         session.commit()
         return saved_suggestion
 
@@ -339,33 +359,48 @@ def persist_analyzed_skill(
 # ── 収集パイプラインのエントリ ────────────────────────────
 
 
-def collect_local(root: Path, owner: str = "local", repo: str = "samples") -> dict[str, object]:
-    """ローカル samples を収集・解析し、DB に永続化する（#9 デモ／ローカルモード）。
+def touch_last_collected_at(repo_id: UUID) -> None:
+    """リポジトリの ``last_collected_at`` を現在時刻へ更新する（収集成功時に呼ぶ）。
 
-    GitHub モードの収集（``collect_repo``）と置き換え可能な形に揃えてある。
+    仕様（er.md）どおり収集の失敗は status カラムでは扱わず、成功時の最終収集時刻と
+    構造化ログだけで運用する。
     """
-    import asyncio
+    with _session_scope() as session:
+        repo = session.get(models.Repository, repo_id)
+        if repo is not None:
+            repo.last_collected_at = datetime.now(UTC)
 
-    from skillshub.shared.agents.librarian import AnalyzedResult, collect_and_analyze
+
+def collect_local(
+    root: Path,
+    owner: str = "local",
+    repo: str = "samples",
+    *,
+    embed_fn: ai_tools.EmbeddingFn | None = None,
+) -> dict[str, object]:
+    """ローカル samples を収集・解析し、埋め込み・重複検出まで含めて DB に永続化する（#9 / #16）。
+
+    司書の統括（``run_librarian_for_repo``）にローカル収集源を渡すだけの薄いラッパ。GitHub
+    モードの収集（``collect_repo`` / #41）と置き換え可能な形に揃えてある。``embed_fn`` 未指定
+    なら Vertex AI（テスト・オフラインでは決定論フェイクを注入）。
+    """
+    from skillshub.shared.agents.librarian import run_librarian_for_repo
     from skillshub.shared.sources.local import load_local_skills
 
     repo_id = get_or_create_repository(owner, repo)
-
-    results: list[AnalyzedResult] = asyncio.run(
-        collect_and_analyze(
-            load_raw_skills=lambda: load_local_skills(root),
-            load_existing_hashes=lambda: get_existing_content_hashes(repo_id),
-        )
+    run_result = run_librarian_for_repo(
+        repo_id,
+        load_raw_skills=lambda: load_local_skills(root),
+        load_existing_hashes=lambda: get_existing_content_hashes(repo_id),
+        embed_fn=embed_fn,
     )
+    touch_last_collected_at(repo_id)
 
-    needs_update = 0
-    for r in results:
-        if persist_analyzed_skill(repo_id, r.raw, r.analyzed, r.update_status, r.update_draft):
-            needs_update += 1
-
+    stats = run_result.stats
     return {
         "repo_id": str(repo_id),
-        "processed_skills": len(results),
-        "needs_update": needs_update,
-        "results": results,
+        "processed_skills": stats.collected,
+        "needs_update": stats.needs_update,
+        "merge_suggestions": stats.merge_suggestions,
+        "results": run_result.results,
     }
