@@ -27,7 +27,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from skillshub.shared.models import Skill, SkillEmbedding, Suggestion, SuggestionTarget
-from skillshub.shared.schemas import ComposeSuggestion, SuggestionType
+from skillshub.shared.schemas import ComposeSuggestion, SuggestionStatus, SuggestionType
 
 # ── 定数・型 ────────────────────────────────────────────
 
@@ -193,7 +193,7 @@ def _existing_open_merge(session: Session, skill_a_id: UUID, skill_b_id: UUID) -
     stmt = (
         select(Suggestion.id)
         .where(Suggestion.type == SuggestionType.MERGE)
-        .where(Suggestion.status == "open")
+        .where(Suggestion.status == SuggestionStatus.OPEN)
         .where(Suggestion.id.in_(targets_a))
         .where(Suggestion.id.in_(targets_b))
         .limit(1)
