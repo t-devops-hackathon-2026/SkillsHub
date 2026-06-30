@@ -85,6 +85,46 @@ class Suggestion(SuggestionBase):
     model_config = {"from_attributes": True}
 
 
+# ── 司書バッチ: Collector → Analyzer 受け渡し ──────────────
+
+
+class RawSkill(BaseModel):
+    """Collector が後段（Analyzer）へ渡す 1 Skill の生データ。
+
+    ADK の session state は JSON 可能な値しか載せられないため、``github_tools`` の
+    ``CollectedSkill``（bytes を持つ dataclass）をテキスト化したものを受け渡し専用とする。
+    """
+
+    source_path: str
+    skill_md_text: str
+    related_file_names: list[str] = Field(default_factory=list)
+    author: str | None = None
+    last_commit_at: datetime | None = None
+    content_hash: str
+
+
+class AnalyzedSkill(BaseModel):
+    """Analyzer（``output_schema``）が返す構造化解析結果。
+
+    ``is_possibly_outdated`` は鮮度 ``needs_update`` 検知の兆候フラグ。Step1 には
+    「既知のAPI変更」の突き合わせ先が無いため、LLM が SKILL.md 本文から
+    deprecated / 古いバージョン参照などの兆候を見つけたら立てる。
+    """
+
+    name: str = Field(description="Skill の名前")
+    description: str = Field(description="Skill が何をするかの簡潔な説明")
+    tags: list[str] = Field(default_factory=list, description="分類タグ")
+    usage: str = Field(description="使い方の要約")
+    is_possibly_outdated: bool = Field(
+        default=False,
+        description="参照API・依存ツールに deprecated や古いバージョン参照などの兆候があれば true",
+    )
+    outdated_reason: str | None = Field(
+        default=None,
+        description="is_possibly_outdated が true のとき、その根拠（どの参照が古いか）",
+    )
+
+
 # ── 検索結果 ───────────────────────────────────────────
 
 
