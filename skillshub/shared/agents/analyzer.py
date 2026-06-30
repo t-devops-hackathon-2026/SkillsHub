@@ -100,9 +100,7 @@ async def _run_agent_once(agent: LlmAgent, text: str) -> dict[str, object]:
     runner, session_id = await _new_runner(agent)
     async for _ in runner.run_async(user_id=_USER_ID, session_id=session_id, new_message=_user_message(text)):
         pass
-    session = await runner.session_service.get_session(
-        app_name=_APP_NAME, user_id=_USER_ID, session_id=session_id
-    )
+    session = await runner.session_service.get_session(app_name=_APP_NAME, user_id=_USER_ID, session_id=session_id)
     return dict(session.state) if session else {}
 
 

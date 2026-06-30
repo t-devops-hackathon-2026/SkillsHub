@@ -33,7 +33,7 @@ def _get_from_secret_manager(name: str) -> str:
     client = _get_sm_client()
     secret_path = f"projects/{project_id}/secrets/{name}/versions/latest"
     response = client.access_secret_version(request={"name": secret_path})
-    return response.payload.data.decode("utf-8")
+    return str(response.payload.data.decode("utf-8"))
 
 
 @lru_cache(maxsize=1)
