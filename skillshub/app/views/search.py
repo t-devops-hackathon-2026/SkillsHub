@@ -1,0 +1,165 @@
+from __future__ import annotations
+
+import html
+import time
+
+import streamlit as st
+
+from skillshub.shared import services
+from skillshub.shared.schemas import (
+    ComposeSuggestion,
+    SearchResult,
+    SearchResultItem,
+    UpdateStatus,
+)
+
+# エージェントの「途中表示」段階。デモ映え用に解析→横断検索→照合の3段で見せる。
+_SEARCH_STEPS: tuple[str, ...] = (
+    "要求を解析しています…",
+    "Skills を横断検索しています…",
+    "鮮度を照合しています…",
+)
+# 各段の待機時間（秒）。体験の見せ場なので少しだけ溜める。
+_STEP_DELAY: float = 0.6
+
+_GREETING: str = (
+    "やりたいことを文章で教えてください。"
+    "社内に散らばった Skills を横断検索して、最適な候補を提案します。"
+    "（例: 議事録を要約したい）"
+)
+
+_UPDATE_STATUS_CONFIG: dict[UpdateStatus, tuple[str, str, str]] = {
+    UpdateStatus.CURRENT:      ("最新",   "#dafbe1", "#1a7f37"),
+    UpdateStatus.STALE:        ("要注意", "#fff8c5", "#9a6700"),
+    UpdateStatus.NEEDS_UPDATE: ("要更新", "#ffebe9", "#cf222e"),
+}
+
+
+def _update_status_badge(status: UpdateStatus) -> str:
+    label, bg, color = _UPDATE_STATUS_CONFIG[status]
+    return (
+        f'<span style="background:{bg};color:{color};padding:2px 10px;'
+        f'border-radius:12px;font-size:12px;font-weight:600;display:inline-block">'
+        f"{label}</span>"
+    )
+
+
+def _seed_greeting() -> None:
+    if not st.session_state.chat_history:
+        st.session_state.chat_history.append(
+            {"role": "assistant", "content": _GREETING}
+        )
+
+
+def _navigate_to_detail(skill_id: str) -> None:
+    st.session_state.selected_skill_id = skill_id
+    st.session_state.current_view = "detail"
+    st.rerun()
+
+
+def _accept_compose(compose: ComposeSuggestion) -> None:
+    # バックエンド未接続のため、採用された合成提案を session_state に控えて
+    # 提案レビュー画面へ誘導する（Suggestion 登録はバックエンド完成後に差し替え）。
+    st.session_state.accepted_compose_suggestion = compose
+    st.session_state.current_view = "suggestions"
+    st.rerun()
+
+
+def _render_item_card(item: SearchResultItem, key_prefix: str) -> None:
+    skill = item.skill
+    with st.container(border=True):
+        st.markdown(_update_status_badge(skill.update_status), unsafe_allow_html=True)
+
+        if st.button(
+            skill.name,
+            key=f"{key_prefix}_card_{skill.id}",
+            use_container_width=True,
+            help="クリックして詳細を表示",
+        ):
+            _navigate_to_detail(str(skill.id))
+
+        st.caption(skill.description)
+        st.progress(item.confidence, text=f"確信度 {round(item.confidence * 100)}%")
+        st.markdown(
+            f'<div style="font-size:13px;color:#59636e;border-top:1px dashed #d0d7de;'
+            f'margin-top:8px;padding-top:7px">💡 推薦理由: {html.escape(item.reason)}</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def _render_compose(compose: ComposeSuggestion, key_prefix: str) -> None:
+    with st.container(border=True):
+        st.markdown(f"**🔗 合成ワークフローの提案** — {html.escape(compose.title)}")
+        st.caption(compose.body)
+        if st.button(
+            "この合成提案を採用",
+            key=f"{key_prefix}_compose_accept",
+            type="primary",
+        ):
+            _accept_compose(compose)
+
+
+def _render_result(result: SearchResult, key_prefix: str) -> None:
+    items = result.items[:3]
+    if not items:
+        st.markdown(
+            "該当する Skills が見つかりませんでした。"
+            "別の言い方や、目的を具体的に書いていただけますか。"
+        )
+        return
+
+    top = round(items[0].confidence * 100)
+    st.markdown(f"**{len(items)} 件の Skills が見つかりました**　·　確信度 {top}%")
+
+    for i, item in enumerate(items):
+        _render_item_card(item, key_prefix=f"{key_prefix}_{i}")
+
+    # 候補が2件以上のときだけ合成ワークフローを併記する。
+    if len(items) >= 2 and result.compose_suggestion is not None:
+        _render_compose(result.compose_suggestion, key_prefix=key_prefix)
+
+
+def _render_history() -> None:
+    for idx, msg in enumerate(st.session_state.chat_history):
+        with st.chat_message(msg["role"]):
+            if "result" in msg:
+                _render_result(msg["result"], key_prefix=f"hist_{idx}")
+            else:
+                st.markdown(msg["content"])
+
+
+def _run_search(query: str) -> None:
+    st.session_state.chat_history.append({"role": "user", "content": query})
+
+    with st.chat_message("user"):
+        st.markdown(query)
+
+    with st.chat_message("assistant"):
+        with st.status("考えています…", expanded=True) as status:
+            for step in _SEARCH_STEPS:
+                st.write(step)
+                time.sleep(_STEP_DELAY)
+            status.update(label="検索が完了しました", state="complete", expanded=False)
+
+        result = services.search_skills(query)
+        st.session_state.chat_history.append(
+            {"role": "assistant", "query": query, "result": result}
+        )
+        _render_result(result, key_prefix=f"hist_{len(st.session_state.chat_history) - 1}")
+
+
+def render() -> None:
+    st.title("🔍 自然言語検索")
+    _seed_greeting()
+    _render_history()
+
+    # ダッシュボードのエージェントバーから渡されたクエリを優先的に消化する。
+    pending = st.session_state.pending_search_query
+    if pending:
+        st.session_state.pending_search_query = ""
+        _run_search(pending)
+        return
+
+    prompt = st.chat_input("やりたいことを書いてください（例: 議事録を要約したい）")
+    if prompt:
+        _run_search(prompt)

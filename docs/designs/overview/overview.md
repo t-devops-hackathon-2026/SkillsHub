@@ -276,7 +276,7 @@ erDiagram
         string tags "string[] 配列"
         text usage "自動生成の使い方"
         timestamptz last_updated "SKILL.md最終コミット日時"
-        string freshness_status "new/stale/needs_update"
+        string update_status "new/stale/needs_update"
         int quality_score "0-100 (Step 3)"
         jsonb quality_breakdown "description/trigger/annotation (Step 3)"
         string content_hash "Skill一式のハッシュ(差分検知)"
