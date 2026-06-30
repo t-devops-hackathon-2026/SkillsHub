@@ -4,6 +4,27 @@ import streamlit as st
 
 from skillshub.shared import services
 
+_MSG_KEY = "repos_flash_message"
+
+
+def _set_flash(level: str, text: str) -> None:
+    st.session_state[_MSG_KEY] = {"level": level, "text": text}
+
+
+def _render_flash() -> None:
+    msg = st.session_state.pop(_MSG_KEY, None)
+    if msg is None:
+        return
+    level = msg["level"]
+    if level == "success":
+        st.success(msg["text"])
+    elif level == "error":
+        st.error(msg["text"])
+    elif level == "warning":
+        st.warning(msg["text"])
+    else:
+        st.info(msg["text"])
+
 
 def _parse_owner_repo(raw: str) -> tuple[str, str] | None:
     """``owner/repo`` 形式を検証してタプルを返す。不正な場合は None。"""
@@ -38,7 +59,7 @@ def _render_register_form() -> None:
     owner, repo = parsed
     try:
         services.get_or_create_repository(owner, repo)
-        st.success(f"✅ `{owner}/{repo}` を登録しました。")
+        _set_flash("success", f"✅ `{owner}/{repo}` を登録しました。")
         st.rerun()
     except Exception as exc:
         st.error(f"登録に失敗しました: {exc}")
@@ -75,10 +96,15 @@ def _render_repo_list() -> None:
                             result = services.collect_repo(repo_id)
                             collected = result["collected_skills"]
                             skipped = result["skipped_skills"]
-                            st.success(f"収集完了 — 処理: {collected} 件 / スキップ: {skipped} 件")
+                            _set_flash(
+                                "success",
+                                f"✅ `{owner}/{repo}` の収集が完了しました。"
+                                f"　取得: {collected} 件　／　スキップ: {skipped} 件",
+                            )
                             st.rerun()
                         except Exception as exc:
-                            st.error(f"収集に失敗しました: {exc}")
+                            _set_flash("error", f"❌ `{owner}/{repo}` の収集に失敗しました。\n{exc}")
+                            st.rerun()
 
 
 def render() -> None:
@@ -86,6 +112,7 @@ def render() -> None:
     st.caption("GitHub App がインストールされたリポジトリを登録し、SKILL.md を収集します。")
     st.divider()
 
+    _render_flash()
     _render_register_form()
     st.divider()
     _render_repo_list()
