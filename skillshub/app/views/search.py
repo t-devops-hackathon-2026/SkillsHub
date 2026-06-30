@@ -55,11 +55,20 @@ def _navigate_to_detail(skill_id: str) -> None:
     st.rerun()
 
 
-def _accept_compose(compose: ComposeSuggestion) -> None:
-    # バックエンド未接続のため、採用された合成提案を session_state に控えて
-    # 提案レビュー画面へ誘導する（Suggestion 登録はバックエンド完成後に差し替え）。
+def _accept_compose(compose: ComposeSuggestion, save_key: str) -> None:
+    # 採用された合成提案を Suggestion(type=compose) として保存し（#17 register_compose_suggestion）、
+    # 提案レビュー画面（#20）へ誘導する。保存失敗時はアプリを落とさず通知して同じ画面に留まる。
+    try:
+        services.register_compose_suggestion(compose)
+    except Exception:  # noqa: BLE001 — DB 保存失敗でも検索体験は壊さず、ユーザーに通知して留まる
+        st.error("合成提案の保存に失敗しました。時間をおいて再度お試しください。")
+        return
+
+    # 同じ提案カードからの二重保存を防ぐため、保存済みキーを控える（再描画時はボタンを出さない）。
+    st.session_state.saved_compose_keys.add(save_key)
     st.session_state.accepted_compose_suggestion = compose
     st.session_state.current_view = "suggestions"
+    st.toast("合成提案を保存しました", icon="✅")
     st.rerun()
 
 
@@ -89,12 +98,16 @@ def _render_compose(compose: ComposeSuggestion, key_prefix: str) -> None:
     with st.container(border=True):
         st.markdown(f"**🔗 合成ワークフローの提案** — {html.escape(compose.title)}")
         st.caption(compose.body)
+        # 一度採用した提案カードは保存済み表示にして、再描画時の二重保存を防ぐ。
+        if key_prefix in st.session_state.saved_compose_keys:
+            st.success("保存済み（提案レビューで確認できます）")
+            return
         if st.button(
             "この合成提案を採用",
             key=f"{key_prefix}_compose_accept",
             type="primary",
         ):
-            _accept_compose(compose)
+            _accept_compose(compose, save_key=key_prefix)
 
 
 def _render_result(result: SearchResult, key_prefix: str) -> None:

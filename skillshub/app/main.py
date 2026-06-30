@@ -20,6 +20,7 @@ def _init_session_state() -> None:
         },
         "pending_search_query": "",
         "accepted_compose_suggestion": None,
+        "saved_compose_keys": set(),
     }
     for key, value in defaults.items():
         if key not in st.session_state:
