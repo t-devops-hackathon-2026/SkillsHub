@@ -16,10 +16,12 @@ from sqlalchemy.orm import Session
 
 from skillshub.shared import services
 from skillshub.shared.agents import composer
+from skillshub.shared.agents import librarian as librarian_module
 from skillshub.shared.agents.composer import ComposerWorkflow
+from skillshub.shared.agents.librarian import LibrarianRunResult, LibrarianStats
 from skillshub.shared.models import Repository, Skill, Suggestion, SuggestionTarget
 from skillshub.shared.schemas import ComposeSuggestion, SuggestionStatus, SuggestionType, UpdateStatus
-from skillshub.shared.tools import ai_tools, github_tools
+from skillshub.shared.tools import ai_tools
 
 
 @contextmanager
@@ -60,54 +62,34 @@ def test_get_summary_counts(db_session: Session, monkeypatch: pytest.MonkeyPatch
     assert summary.duplicate_candidates == 1
 
 
-def _collected(skill_md_text: str, *, path: str = "skills/foo/SKILL.md") -> github_tools.CollectedSkill:
-    return github_tools.CollectedSkill(
-        owner="o",
-        repo="r",
-        skill_dir="skills/foo",
-        skill_md_path=path,
-        skill_md=github_tools.SkillFile(path=path, content=skill_md_text.encode("utf-8")),
-        related_files=[],
-        author="alice",
-        last_commit_at=None,
-        content_hash="hash1",
-    )
-
-
-def test_collect_repo_inserts_then_updates(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_collect_repo_runs_full_pipeline(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """collect_repo が run_librarian_for_repo を正しい引数で呼ぶことを検証する。"""
     repo = Repository(owner="o", repo="r")
     db_session.add(repo)
     db_session.flush()
 
     monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
 
-    md = "---\nname: 議事録要約\ndescription: 会議の議事録を要約する\n---\n# 本文\n"
-    monkeypatch.setattr(github_tools, "collect_skills", lambda target: [_collected(md)])
+    captured: dict[str, object] = {}
+
+    def fake_run_librarian(
+        repo_id: object,
+        load_raw_skills: object,
+        load_existing_hashes: object,
+        *,
+        embed_fn: object = None,
+    ) -> LibrarianRunResult:
+        captured["repo_id"] = repo_id
+        return LibrarianRunResult(stats=LibrarianStats(collected=1, skipped=0))
+
+    monkeypatch.setattr(librarian_module, "run_librarian_for_repo", fake_run_librarian)
 
     result = services.collect_repo(str(repo.id))
+
     assert result["collected_skills"] == 1
-    assert result["new_skills"] == 1
-    assert result["updated_skills"] == 0
-
-    skill = db_session.scalar(select(Skill).where(Skill.source_path == "skills/foo/SKILL.md"))
-    assert skill is not None
-    assert skill.name == "議事録要約"
-    assert skill.description == "会議の議事録を要約する"
-    assert skill.content_hash == "hash1"
-
-    # 2 回目: 同一 source_path は更新（new ではなく updated）。
-    md2 = "---\nname: 議事録要約v2\ndescription: 更新後の説明\n---\n"
-    monkeypatch.setattr(github_tools, "collect_skills", lambda target: [_collected(md2)])
-
-    result2 = services.collect_repo(str(repo.id))
-    assert result2["new_skills"] == 0
-    assert result2["updated_skills"] == 1
-
-    db_session.expire_all()
-    skill2 = db_session.scalar(select(Skill).where(Skill.source_path == "skills/foo/SKILL.md"))
-    assert skill2 is not None
-    assert skill2.name == "議事録要約v2"
-    assert skill2.description == "更新後の説明"
+    assert result["skipped_skills"] == 0
+    assert result["status"] == "success"
+    assert captured["repo_id"] == repo.id
 
 
 def test_search_skills_end_to_end(

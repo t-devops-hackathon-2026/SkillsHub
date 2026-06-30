@@ -24,12 +24,12 @@ from skillshub.shared.schemas import AnalyzedSkill, RawSkill, SuggestionType, Up
 
 
 def test_resolve_loader_local_returns_loader() -> None:
-    assert run_collect._resolve_loader("local") is not None
+    assert run_collect._resolve_loader("local", "samples") is not None
 
 
-def test_resolve_loader_github_returns_none() -> None:
-    # GitHub 収集源は #41。#16 では未対応なので None（呼び出し側がスキップ・ログ記録する）。
-    assert run_collect._resolve_loader("some-org") is None
+def test_resolve_loader_github_returns_loader() -> None:
+    # GitHub 収集源（#41）: ローカル以外は GitHub ローダーを返す（呼び出し時に GitHub API へ接続する）。
+    assert run_collect._resolve_loader("some-org", "some-repo") is not None
 
 
 # ── persist_and_dedup（DB 統合）──────────────────────────

@@ -30,7 +30,7 @@ from skillshub.shared.schemas import (
     SuggestionType,
     UpdateStatus,
 )
-from skillshub.shared.tools import ai_tools, github_tools
+from skillshub.shared.tools import ai_tools
 
 # get_session は commit/rollback/close を内包するジェネレータ。with で使うため CM 化する。
 _session_scope = contextmanager(get_session)
@@ -67,61 +67,40 @@ def register_compose_suggestion(compose: ComposeSuggestion) -> UUID:
         return ai_tools.create_compose_suggestion(session, compose)
 
 
-def collect_repo(repo_id: str) -> dict[str, object]:
-    """指定リポジトリから SKILL.md を即時収集し、Skill を最小カラムで DB へ upsert する。
+def collect_repo(repo_id: str, *, embed_fn: ai_tools.EmbeddingFn | None = None) -> dict[str, object]:
+    """指定リポジトリから GitHub 経由で全 Skill を収集し、フルパイプラインで DB に保存する。
 
-    最小実装（Issue #17）。name/description は SKILL.md のフロントマターを簡易抽出する。
-    構造化解析（AnalyzerAgent）・鮮度判定・埋め込み生成・dedup 連携は未実装で、
-    司書バッチ（run_collect）側の課題として docs/TODO-issue-17.md に切り出している。
-
-    GitHub App 認証（環境変数 / Secret Manager）が必要。
+    収集→差分検知→解析→鮮度判定→埋め込み→重複検出 の全工程を実行する（#41 本実装）。
+    GitHub App 認証（環境変数 GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY または Secret Manager）が必要。
     """
-    repo_uuid = UUID(repo_id)
-    new_skills = 0
-    updated_skills = 0
+    from skillshub.shared.agents.librarian import run_librarian_for_repo
+    from skillshub.shared.sources.github import load_github_skills
 
+    repo_uuid = UUID(repo_id)
     with _session_scope() as session:
         repo = session.get(models.Repository, repo_uuid)
         if repo is None:
             raise ValueError(f"リポジトリが見つかりません: {repo_id}")
+        owner = repo.owner
+        repo_name = repo.repo
 
-        collected = github_tools.collect_skills(f"{repo.owner}/{repo.repo}")
-        for cs in collected:
-            name, description = _extract_name_description(cs)
-            existing = session.scalar(
-                select(models.Skill)
-                .where(models.Skill.repo_id == repo.id)
-                .where(models.Skill.source_path == cs.source_path)
-            )
-            if existing is None:
-                session.add(
-                    models.Skill(
-                        repo_id=repo.id,
-                        name=name,
-                        description=description,
-                        source_path=cs.source_path,
-                        author=cs.author,
-                        last_updated=cs.last_commit_at,
-                        content_hash=cs.content_hash,
-                    )
-                )
-                new_skills += 1
-            else:
-                existing.name = name
-                existing.description = description
-                existing.author = cs.author
-                existing.last_updated = cs.last_commit_at
-                existing.content_hash = cs.content_hash
-                updated_skills += 1
+    target = f"{owner}/{repo_name}"
+    run_result = run_librarian_for_repo(
+        repo_uuid,
+        load_raw_skills=lambda: load_github_skills(target),
+        load_existing_hashes=lambda: get_existing_content_hashes(repo_uuid),
+        embed_fn=embed_fn,
+    )
+    touch_last_collected_at(repo_uuid)
 
-        repo.last_collected_at = datetime.now(UTC)
-        collected_count = len(collected)
-
+    s = run_result.stats
     return {
         "repo_id": repo_id,
-        "collected_skills": collected_count,
-        "new_skills": new_skills,
-        "updated_skills": updated_skills,
+        "collected_skills": s.collected,
+        "skipped_skills": s.skipped,
+        "needs_update": s.needs_update,
+        "merge_suggestions": s.merge_suggestions,
+        "failed": s.failed,
         "status": "success",
     }
 
@@ -159,53 +138,6 @@ def get_summary() -> DashboardSummary:
 def _count(session: Session, stmt: Select[tuple[int]]) -> int:
     """COUNT クエリを実行し、結果（NULL なら 0）を int で返す。"""
     return int(session.scalar(stmt) or 0)
-
-
-def _extract_name_description(collected: github_tools.CollectedSkill) -> tuple[str, str]:
-    """SKILL.md のフロントマターから name/description を簡易抽出する（最小実装）。
-
-    本来は AnalyzerAgent が Gemini で構造化解析する範囲。ここでは YAML フロントマターの
-    ``name:`` / ``description:`` だけを軽量パースし、無ければディレクトリ名・先頭行に
-    フォールバックする（docs/TODO-issue-17.md）。
-    """
-    text = collected.skill_md.text
-    front = _parse_frontmatter(text)
-    name = front.get("name") or collected.skill_dir.rsplit("/", 1)[-1] or collected.source_path
-    description = front.get("description") or _first_content_line(text)
-    return name, description
-
-
-def _parse_frontmatter(text: str) -> dict[str, str]:
-    """先頭の ``---`` で囲まれた YAML フロントマターを ``key: value`` で軽量パースする。"""
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return {}
-    front: dict[str, str] = {}
-    for line in lines[1:]:
-        if line.strip() == "---":
-            break
-        if ":" in line:
-            key, _, value = line.partition(":")
-            front[key.strip()] = value.strip().strip("\"'")
-    return front
-
-
-def _first_content_line(text: str) -> str:
-    """フロントマター / 見出し記号を除いた最初の本文行を返す（description の代替）。"""
-    in_frontmatter = False
-    for index, raw in enumerate(text.splitlines()):
-        line = raw.strip()
-        if index == 0 and line == "---":
-            in_frontmatter = True
-            continue
-        if in_frontmatter:
-            if line == "---":
-                in_frontmatter = False
-            continue
-        stripped = line.lstrip("#").strip()
-        if stripped:
-            return stripped
-    return ""
 
 
 # ── ダッシュボード読み取り（実 DB）────────────────────────
