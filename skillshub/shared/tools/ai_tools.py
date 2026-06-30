@@ -68,7 +68,14 @@ def embed_text(text: str, model: str = EMBEDDING_MODEL) -> list[float]:
     ``google-cloud-aiplatform`` は関数内で遅延 import する。GCP 認証が無い環境
     （ローカルテスト等）では本関数を呼ばず ``EmbeddingFn`` のフェイクを注入する。
     """
+    import os
+
+    import vertexai
     from vertexai.language_models import TextEmbeddingModel
+
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "asia-northeast1")
+    vertexai.init(project=project, location=location)
 
     embedding_model = TextEmbeddingModel.from_pretrained(model)
     embeddings = embedding_model.get_embeddings([text])
