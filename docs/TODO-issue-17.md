@@ -29,9 +29,9 @@
 - [x] 保存ヘルパを実装済み: `ai_tools.create_compose_suggestion()` と、その薄いサービス
   ラッパ `services.register_compose_suggestion(compose) -> UUID`。`Suggestion(type=compose)` +
   `suggestion_targets`（候補全件）を保存する。
-- [ ] **画面側の配線**: `search_skills()` は提案を**返すだけ**（保存しない）。検索画面（#19）の
-  「採用」ボタンから `register_compose_suggestion()` を呼んで保存し、提案レビュー（#20）で
-  採用/却下を扱う。
+- [x] **画面側の配線**（#19 で対応）: 検索画面の「採用」ボタンから `register_compose_suggestion()`
+  を呼んで `Suggestion(type=compose)` を保存するよう配線済み（`app/views/search.py::_accept_compose`）。
+  保存後は提案レビュー（#20）へ誘導する。採用/却下の扱いは #20 側。
 
 ## ADK Runner へのオンライン配線
 
