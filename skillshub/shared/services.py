@@ -143,6 +143,28 @@ def _count(session: Session, stmt: Select[tuple[int]]) -> int:
 # ── ダッシュボード読み取り（実 DB）────────────────────────
 
 
+def list_repositories() -> list[dict[str, object]]:
+    """登録済みリポジトリ一覧を Skill 件数付きで返す（リポジトリ登録画面用）。"""
+    with Session(_get_engine()) as session:
+        repos = session.scalars(select(models.Repository).order_by(models.Repository.created_at)).all()
+        result: list[dict[str, object]] = []
+        for repo in repos:
+            skill_count = _count(
+                session,
+                select(func.count()).select_from(models.Skill).where(models.Skill.repo_id == repo.id),
+            )
+            result.append(
+                {
+                    "id": str(repo.id),
+                    "owner": repo.owner,
+                    "repo": repo.repo,
+                    "last_collected_at": repo.last_collected_at,
+                    "skill_count": skill_count,
+                }
+            )
+    return result
+
+
 def list_all_tags() -> list[str]:
     with Session(_get_engine()) as session:
         rows = session.scalars(select(models.Skill.tags).order_by(models.Skill.name)).all()
