@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from skillshub.shared.update_status import compute_update_status
 from skillshub.shared.schemas import UpdateStatus
+from skillshub.shared.update_status import compute_update_status
 
 
 def _days_ago(days: int) -> datetime:

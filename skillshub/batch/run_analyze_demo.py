@@ -28,9 +28,9 @@ _SAMPLES_ROOT = Path(__file__).resolve().parents[2] / "samples"
 
 # 鮮度を再現するための擬似コミット経過日数（mtime に反映）。
 _SAMPLE_AGE_DAYS: dict[str, int] = {
-    "meeting-summarizer": 10,   # → current
-    "weekly-report": 120,       # → stale
-    "data-catalog": 30,         # 本文に deprecated 記述 → needs_update（日数は若くても兆候優先）
+    "meeting-summarizer": 10,  # → current
+    "weekly-report": 120,  # → stale
+    "data-catalog": 30,  # 本文に deprecated 記述 → needs_update（日数は若くても兆候優先）
 }
 
 

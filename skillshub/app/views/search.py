@@ -29,8 +29,8 @@ _GREETING: str = (
 )
 
 _UPDATE_STATUS_CONFIG: dict[UpdateStatus, tuple[str, str, str]] = {
-    UpdateStatus.CURRENT:      ("最新",   "#dafbe1", "#1a7f37"),
-    UpdateStatus.STALE:        ("要注意", "#fff8c5", "#9a6700"),
+    UpdateStatus.CURRENT: ("最新", "#dafbe1", "#1a7f37"),
+    UpdateStatus.STALE: ("要注意", "#fff8c5", "#9a6700"),
     UpdateStatus.NEEDS_UPDATE: ("要更新", "#ffebe9", "#cf222e"),
 }
 
@@ -46,9 +46,7 @@ def _update_status_badge(status: UpdateStatus) -> str:
 
 def _seed_greeting() -> None:
     if not st.session_state.chat_history:
-        st.session_state.chat_history.append(
-            {"role": "assistant", "content": _GREETING}
-        )
+        st.session_state.chat_history.append({"role": "assistant", "content": _GREETING})
 
 
 def _navigate_to_detail(skill_id: str) -> None:
@@ -102,10 +100,7 @@ def _render_compose(compose: ComposeSuggestion, key_prefix: str) -> None:
 def _render_result(result: SearchResult, key_prefix: str) -> None:
     items = result.items[:3]
     if not items:
-        st.markdown(
-            "該当する Skills が見つかりませんでした。"
-            "別の言い方や、目的を具体的に書いていただけますか。"
-        )
+        st.markdown("該当する Skills が見つかりませんでした。別の言い方や、目的を具体的に書いていただけますか。")
         return
 
     top = round(items[0].confidence * 100)
@@ -142,9 +137,7 @@ def _run_search(query: str) -> None:
             status.update(label="検索が完了しました", state="complete", expanded=False)
 
         result = services.search_skills(query)
-        st.session_state.chat_history.append(
-            {"role": "assistant", "query": query, "result": result}
-        )
+        st.session_state.chat_history.append({"role": "assistant", "query": query, "result": result})
         _render_result(result, key_prefix=f"hist_{len(st.session_state.chat_history) - 1}")
 
 
