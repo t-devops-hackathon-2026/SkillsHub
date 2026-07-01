@@ -81,6 +81,7 @@ def _render_repo_list() -> None:
         skill_count = int(str(r["skill_count"]))
         repo_id = str(r["id"])
 
+        clicked = False
         with st.container(border=True):
             col_info, col_btn = st.columns([5, 1])
 
@@ -90,21 +91,23 @@ def _render_repo_list() -> None:
                 st.caption(f"最終収集: {last_str}　｜　Skill: {skill_count} 件")
 
             with col_btn:
-                if st.button("今すぐ収集", key=f"collect_{repo_id}", use_container_width=True):
-                    with st.spinner(f"{owner}/{repo} を収集中…"):
-                        try:
-                            result = services.collect_repo(repo_id)
-                            collected = result["collected_skills"]
-                            skipped = result["skipped_skills"]
-                            _set_flash(
-                                "success",
-                                f"✅ `{owner}/{repo}` の収集が完了しました。"
-                                f"　取得: {collected} 件　／　スキップ: {skipped} 件",
-                            )
-                            st.rerun()
-                        except Exception as exc:
-                            _set_flash("error", f"❌ `{owner}/{repo}` の収集に失敗しました。\n{exc}")
-                            st.rerun()
+                clicked = st.button("今すぐ収集", key=f"collect_{repo_id}", use_container_width=True)
+
+        if clicked:
+            with st.spinner(f"{owner}/{repo} を収集中…"):
+                try:
+                    result = services.collect_repo(repo_id)
+                    collected = result["collected_skills"]
+                    skipped = result["skipped_skills"]
+                    _set_flash(
+                        "success",
+                        f"✅ `{owner}/{repo}` の収集が完了しました。"
+                        f"　取得: {collected} 件　／　スキップ: {skipped} 件",
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    _set_flash("error", f"❌ `{owner}/{repo}` の収集に失敗しました。\n{exc}")
+                    st.rerun()
 
 
 def render() -> None:
