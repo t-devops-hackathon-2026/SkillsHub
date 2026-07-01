@@ -8,11 +8,10 @@
 
 実行:
 
-    uv run python -m skillshub.batch.run_collect                   # 全登録リポジトリ
-    uv run python -m skillshub.batch.run_collect --repo-id <uuid>  # 指定リポジトリのみ（即時収集）
-
-#16 はローカル収集源（``samples/``）で 1 ループ完走することを範囲とする。実 GitHub からの
-収集配線（owner が ``local`` 以外の収集源解決）は #41 が担当する。
+    uv run python -m skillshub.batch.run_collect                       # 全登録リポジトリ
+    uv run python -m skillshub.batch.run_collect owner/repo            # GitHub 直指定（単一リポジトリ）
+    uv run python -m skillshub.batch.run_collect owner                 # Org 配下を全列挙して収集
+    uv run python -m skillshub.batch.run_collect --repo-id <uuid>      # DB 登録済みリポジトリを UUID 指定
 """
 
 from __future__ import annotations
@@ -32,27 +31,27 @@ from skillshub.shared.agents.librarian import run_librarian_for_repo
 from skillshub.shared.db import get_session
 from skillshub.shared.models import Repository
 from skillshub.shared.schemas import RawSkill
+from skillshub.shared.sources.github import load_github_skills
 from skillshub.shared.sources.local import load_local_skills
 from skillshub.shared.tools.ai_tools import EmbeddingFn
 
 # get_session は commit/rollback/close を内包するジェネレータ。with で使うため CM 化する。
 _session_scope = contextmanager(get_session)
 
-# ローカル収集源（#16）。GitHub 収集源の解決は #41。
 _SAMPLES_ROOT = Path(__file__).resolve().parents[2] / "samples"
 _LOCAL_OWNER = "local"
 _LOCAL_REPO = "samples"
 
 
-def _resolve_loader(owner: str) -> Callable[[], list[RawSkill]] | None:
-    """リポジトリに対応する収集源（``load_raw_skills``）を返す。#16 はローカルのみ対応。
+def _resolve_loader(owner: str, repo: str) -> Callable[[], list[RawSkill]]:
+    """リポジトリに対応する収集源（``load_raw_skills``）を返す。
 
-    GitHub 収集源（owner が ``local`` 以外）は #41 で配線するため、ここでは ``None`` を返し、
-    呼び出し側はそのリポジトリを「収集源未対応」としてスキップ・ログ記録する。
+    owner が ``local`` ならローカルサンプルを、それ以外は GitHub App 経由で収集する。
     """
     if owner == _LOCAL_OWNER:
         return lambda: load_local_skills(_SAMPLES_ROOT)
-    return None
+    target = f"{owner}/{repo}"
+    return lambda: load_github_skills(target)
 
 
 def _existing_hashes_loader(repo_id: UUID) -> Callable[[], dict[str, str]]:
@@ -75,18 +74,60 @@ def _target_repos(repo_id: UUID | None) -> list[tuple[UUID, str, str]]:
         return [(r.id, r.owner, r.repo) for r in repos]
 
 
-def main(repo_id: str | None = None, *, embed_fn: EmbeddingFn | None = None) -> int:
-    """登録リポジトリを巡回して収集パイプラインを回す。失敗リポジトリがあれば終了コード 1。"""
+def _resolve_github_targets(target: str) -> list[tuple[UUID, str, str]]:
+    """GitHub target（``owner/repo`` or ``owner``）から収集対象のリポジトリリストを返す。
+
+    DB に未登録のリポジトリは ``get_or_create_repository`` で自動登録する。
+    owner のみ指定された場合は GitHub App のインストール配下を全列挙する。
+    """
+    if "/" in target:
+        owner, repo = target.split("/", 1)
+        repo_id = services.get_or_create_repository(owner, repo)
+        return [(repo_id, owner, repo)]
+
+    # owner のみ → Org のインストール配下を全列挙
+    from skillshub.shared.tools.github_tools import (
+        generate_app_jwt,
+        get_installation_id_for_org,
+        get_installation_token,
+        list_installation_repositories,
+    )
+
+    org = target
+    app_jwt = generate_app_jwt()
+    installation_id = get_installation_id_for_org(app_jwt, org)
+    token = get_installation_token(app_jwt, installation_id)
+    result: list[tuple[UUID, str, str]] = []
+    for repo_owner, repo_name, _default_branch in list_installation_repositories(token):
+        repo_id = services.get_or_create_repository(repo_owner, repo_name)
+        result.append((repo_id, repo_owner, repo_name))
+    return result
+
+
+def main(
+    repo_id: str | None = None,
+    target: str | None = None,
+    *,
+    embed_fn: EmbeddingFn | None = None,
+) -> int:
+    """登録リポジトリを巡回して収集パイプラインを回す。失敗リポジトリがあれば終了コード 1。
+
+    ``target`` が指定された場合は GitHub 直指定モード（owner/repo または owner）。
+    未指定の場合は DB 登録済みリポジトリを巡回するバッチモード。
+    """
     repo_uuid = UUID(repo_id) if repo_id else None
 
-    # 引数なし（定期バッチ）でもローカル完走できるよう、ローカル収集源のリポジトリを用意する。
-    # 実 GitHub リポジトリの巡回は #41 で収集源解決を拡張する。
-    if repo_uuid is None:
-        services.get_or_create_repository(_LOCAL_OWNER, _LOCAL_REPO)
+    if target is not None:
+        targets = _resolve_github_targets(target)
+    else:
+        # DB 巡回モード: 引数なし（定期バッチ）でもローカル完走できるよう local/samples を用意する。
+        if repo_uuid is None:
+            services.get_or_create_repository(_LOCAL_OWNER, _LOCAL_REPO)
+        targets = _target_repos(repo_uuid)
 
-    targets = _target_repos(repo_uuid)
     if not targets:
-        print(json.dumps({"summary": "対象リポジトリがありません", "repo_id": repo_id}, ensure_ascii=False))
+        msg = {"summary": "対象リポジトリがありません", "repo_id": repo_id, "target": target}
+        print(json.dumps(msg, ensure_ascii=False))
         return 0
 
     failed_repos = 0
@@ -100,12 +141,7 @@ def main(repo_id: str | None = None, *, embed_fn: EmbeddingFn | None = None) -> 
             "merge_suggestions": 0,
             "failed": 0,
         }
-        loader = _resolve_loader(owner)
-        if loader is None:
-            log["status"] = "skipped"
-            log["reason"] = "収集源未対応（GitHub は #41）"
-            print(json.dumps(log, ensure_ascii=False))
-            continue
+        loader = _resolve_loader(owner, repo_name)
 
         try:
             run_result = run_librarian_for_repo(
@@ -140,10 +176,20 @@ def main(repo_id: str | None = None, *, embed_fn: EmbeddingFn | None = None) -> 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="司書収集バッチ（Cloud Run Jobs エントリ）")
-    parser.add_argument("--repo-id", default=None, help="対象リポジトリの UUID（省略時は全登録リポジトリを巡回）")
+    parser.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="GitHub target: owner/repo（単一）または owner（Org 全体）。省略時は DB 登録済み全リポジトリを巡回",
+    )
+    parser.add_argument(
+        "--repo-id",
+        default=None,
+        help="DB 登録済みリポジトリの UUID（target 省略時のみ有効。省略時は全登録リポジトリを巡回）",
+    )
     return parser.parse_args(argv)
 
 
 if __name__ == "__main__":
     args = _parse_args(sys.argv[1:])
-    raise SystemExit(main(args.repo_id))
+    raise SystemExit(main(args.repo_id, args.target))

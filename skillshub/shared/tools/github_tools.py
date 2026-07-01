@@ -96,7 +96,13 @@ def _resolve_app_id() -> str:
 
 
 def _resolve_private_key() -> str:
-    """App 秘密鍵(PEM)を取得する。ローカルは環境変数、本番は Secret Manager。"""
+    """App 秘密鍵(PEM)を取得する。優先順位: ファイルパス → 環境変数 → Secret Manager。
+
+    GITHUB_APP_PRIVATE_KEY_PATH が設定されている場合はファイルから読む（改行崩れを防ぐため）。
+    """
+    path = os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH")
+    if path:
+        return open(path).read()  # noqa: SIM115
     return os.environ.get("GITHUB_APP_PRIVATE_KEY") or get_secret("github-app-private-key")
 
 

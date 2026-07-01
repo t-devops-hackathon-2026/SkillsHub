@@ -4,7 +4,7 @@ from typing import Literal
 
 import streamlit as st
 
-from skillshub.app.views import dashboard, search
+from skillshub.app.views import dashboard, repos, search
 
 
 def _init_session_state() -> None:
@@ -66,8 +66,7 @@ def _render_content() -> None:
         st.title("💡 提案レビュー")
         st.info("提案レビュー画面は準備中です（Issue #15）")
     elif view == "repos":
-        st.title("📦 リポジトリ登録")
-        st.info("リポジトリ登録画面は準備中です（Issue #16）")
+        repos.render()
     else:
         st.session_state.current_view = "dashboard"
         dashboard.render()
