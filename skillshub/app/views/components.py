@@ -136,6 +136,14 @@ section.main [data-testid="stFormSubmitButton"] button[kind="primary"]:hover{
 /* カード内は要素間隔を詰めて「名前・説明・タグ」をひとかたまりに見せる。
    説明は常に2行分の高さを取り、カードの高さを揃える。 */
 .stVerticalBlock[class*="st-key-skill_box_"]{gap:.45rem}
+
+/* 状態バッジはカード右上に絶対配置し、スキル名と同じ高さに固定する。
+   バッジを包む要素コンテナごとフローから外す（gap の幽霊余白を作らない）。 */
+.stVerticalBlock[class*="st-key-skill_box_"],
+.stVerticalBlock[class*="st-key-hist_"]{position:relative}
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] .sh-badge-abs){
+  position:absolute;top:13px;right:1rem;width:auto;margin:0;z-index:1}
+div[class*="st-key-"][class*="_card_"]{padding-right:104px}
 .stVerticalBlock[class*="st-key-skill_box_"] [data-testid="stCaptionContainer"] p{
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
   min-height:2.9em;font-size:.85rem;color:#454c54;line-height:1.7}
@@ -152,6 +160,7 @@ div[class*="st-key-"][class*="_card_"] button>div{justify-content:flex-start;wid
 /* ── Skill カードのタイトル（key に "_card_" を含むボタン）：リンク風 ── */
 div[class*="st-key-"][class*="_card_"] button{
   background:transparent;border:0;box-shadow:none;padding:0;
+  min-height:0;height:auto;
   color:var(--gh-accent);font-weight:600;font-size:1.05rem;
   justify-content:flex-start;text-align:left}
 div[class*="st-key-"][class*="_card_"] button:hover{

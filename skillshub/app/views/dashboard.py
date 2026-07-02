@@ -104,21 +104,19 @@ def _render_skill_cards(skills: list[Skill]) -> None:
     cols = st.columns(3, gap="medium")
     for i, skill in enumerate(skills):
         with cols[i % 3], st.container(border=True, key=f"skill_box_{skill.id}"):
-            # ヘッダー行: スキル名（主役）＋ 状態バッジ。取得元パスは詳細画面に任せて出さない。
-            title_col, badge_col = st.columns([3, 1.2], vertical_alignment="center")
-            with title_col:
-                if st.button(
-                    skill.name,
-                    key=f"skill_card_{skill.id}",
-                    use_container_width=True,
-                    help="クリックして詳細を表示",
-                ):
-                    navigate_to_detail(str(skill.id))
-            with badge_col:
-                st.markdown(
-                    f'<div style="text-align:right">{update_status_badge(skill.update_status)}</div>',
-                    unsafe_allow_html=True,
-                )
+            # ヘッダー行: スキル名（主役）。状態バッジは CSS でカード右上に絶対配置し、
+            # 名前と同じ高さに固定する（カラムの縦センターは要素ごとの余白でずれるため）。
+            if st.button(
+                skill.name,
+                key=f"skill_card_{skill.id}",
+                use_container_width=True,
+                help="クリックして詳細を表示",
+            ):
+                navigate_to_detail(str(skill.id))
+            st.markdown(
+                f'<div class="sh-badge-abs">{update_status_badge(skill.update_status)}</div>',
+                unsafe_allow_html=True,
+            )
 
             desc = skill.description
             if len(desc) > 90:

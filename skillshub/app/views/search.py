@@ -54,21 +54,18 @@ def _accept_compose(compose: ComposeSuggestion, save_key: str) -> None:
 def _render_item_card(item: SearchResultItem, key_prefix: str) -> None:
     skill = item.skill
     with st.container(border=True, key=f"{key_prefix}_box"):
-        # ダッシュボードのカードと同じ「スキル名＋状態バッジ」のヘッダー行に揃える。
-        title_col, badge_col = st.columns([3, 1.2], vertical_alignment="center")
-        with title_col:
-            if st.button(
-                skill.name,
-                key=f"{key_prefix}_card_{skill.id}",
-                use_container_width=True,
-                help="クリックして詳細を表示",
-            ):
-                navigate_to_detail(str(skill.id))
-        with badge_col:
-            st.markdown(
-                f'<div style="text-align:right">{update_status_badge(skill.update_status)}</div>',
-                unsafe_allow_html=True,
-            )
+        # ダッシュボードのカードと同じ「スキル名＋右上バッジ」構成に揃える。
+        if st.button(
+            skill.name,
+            key=f"{key_prefix}_card_{skill.id}",
+            use_container_width=True,
+            help="クリックして詳細を表示",
+        ):
+            navigate_to_detail(str(skill.id))
+        st.markdown(
+            f'<div class="sh-badge-abs">{update_status_badge(skill.update_status)}</div>',
+            unsafe_allow_html=True,
+        )
 
         st.caption(skill.description)
         st.progress(item.confidence, text=f"確信度 {round(item.confidence * 100)}%")
