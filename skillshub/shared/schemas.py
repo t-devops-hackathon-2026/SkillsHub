@@ -155,6 +155,19 @@ class AnalyzedSkill(BaseModel):
     )
 
 
+class UpdateDraft(BaseModel):
+    """update 提案のドラフト（``output_schema``）。
+
+    「こういう状況だから、こう直せば？」を管理者が数秒で読み取れるよう、
+    状況・提案・diff を分けて生成させる。DB 保存時は 1 つのテキスト
+    （suggestions.content）に整形して内包する（er.md: diff カラムは持たない）。
+    """
+
+    situation: str = Field(description="何がどう古いのか（1〜2文）")
+    proposal: str = Field(description="どう直せばよいか（1〜2文、方向性を言い切る）")
+    diff: str = Field(description="修正方針を示す unified diff（コードフェンスや説明文は含めない）")
+
+
 # ── 検索結果 ───────────────────────────────────────────
 
 

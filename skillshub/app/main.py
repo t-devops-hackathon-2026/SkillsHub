@@ -37,7 +37,7 @@ def _render_sidebar() -> None:
     nav_items = [
         ("dashboard", "スキル一覧"),
         ("search", "スキルを探す"),
-        ("suggestions", "改善の提案を確認する"),
+        ("suggestions", "提案を確認する"),
         ("repos", "収集元を追加する"),
     ]
 
