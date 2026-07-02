@@ -13,19 +13,19 @@ import streamlit as st
 
 from skillshub.app.views.components import navigate_to_detail, suggestion_type_badge
 from skillshub.shared import services
-from skillshub.shared.schemas import SuggestionType, SuggestionView
+from skillshub.shared.schemas import SuggestionStatus, SuggestionType, SuggestionView
 
 
 def _accept(suggestion: SuggestionView) -> None:
     try:
         services.accept_suggestion(str(suggestion.id))
     except Exception:  # noqa: BLE001 — DB 更新失敗でも画面は壊さず、ユーザーに通知して留まる
-        st.error("提案の採用に失敗しました。時間をおいて再度お試しください。")
+        st.error("記録に失敗しました。時間をおいて再度お試しください。")
         return
     if suggestion.type is SuggestionType.UPDATE:
-        st.toast("提案を採用し、対象の Skill を「最新」に戻しました", icon="✅")
+        st.toast("対応することにしました。鮮度を「最新」に戻しました（SKILL.md への反映は手元で）", icon="✅")
     else:
-        st.toast("提案を採用しました", icon="✅")
+        st.toast("対応することにしました（SKILL.md への反映は手元で）", icon="✅")
     st.rerun()
 
 
@@ -33,9 +33,9 @@ def _dismiss(suggestion: SuggestionView) -> None:
     try:
         services.dismiss_suggestion(str(suggestion.id))
     except Exception:  # noqa: BLE001 — DB 更新失敗でも画面は壊さず、ユーザーに通知して留まる
-        st.error("提案の却下に失敗しました。時間をおいて再度お試しください。")
+        st.error("記録に失敗しました。時間をおいて再度お試しください。")
         return
-    st.toast("提案を却下しました")
+    st.toast("この提案は対応しないことにしました")
     st.rerun()
 
 
@@ -109,18 +109,38 @@ def render_suggestion_card(suggestion: SuggestionView, key_prefix: str, *, show_
         else:
             st.markdown(suggestion.content)
 
-        col1, col2, _spacer = st.columns([1, 1, 4])
-        with col1:
-            if st.button("採用", key=f"{key_prefix}_accept", type="primary", use_container_width=True):
-                _accept(suggestion)
-        with col2:
-            if st.button("却下", key=f"{key_prefix}_dismiss", use_container_width=True):
-                _dismiss(suggestion)
+        # 未対応なら判断ボタン、判断済みなら結果を読み取り専用で示す。
+        if suggestion.status is SuggestionStatus.OPEN:
+            col1, col2, _spacer = st.columns([1.2, 1.2, 3.6])
+            with col1:
+                if st.button("対応する", key=f"{key_prefix}_accept", type="primary", use_container_width=True):
+                    _accept(suggestion)
+            with col2:
+                if st.button("対応しない", key=f"{key_prefix}_dismiss", use_container_width=True):
+                    _dismiss(suggestion)
+        elif suggestion.status is SuggestionStatus.ACCEPTED:
+            st.markdown(
+                '<span style="color:#1a7f37;font-size:13px;font-weight:600">✓ 対応すると判断済み</span>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<span style="color:#59636e;font-size:13px;font-weight:600">対応しないと判断済み</span>',
+                unsafe_allow_html=True,
+            )
+
+
+def _load_resolved() -> list[SuggestionView]:
+    """判断済み（対応する / 対応しない）の提案を新しい順で返す。"""
+    resolved = services.list_suggestions(SuggestionStatus.ACCEPTED) + services.list_suggestions(
+        SuggestionStatus.DISMISSED
+    )
+    return sorted(resolved, key=lambda s: s.created_at, reverse=True)
 
 
 def render() -> None:
     st.title("提案を確認する")
-    st.caption("エージェントが見つけた重複の統合・内容の更新・ワークフロー合成の提案を、採用または却下します。")
+    st.caption("エージェントが見つけた重複の統合・内容の更新・ワークフロー合成の提案に、対応するかどうかを決めます。")
 
     # 検索画面で合成提案を採用した直後の遷移なら、保存されたことを一度だけ知らせる。
     accepted_compose = st.session_state.accepted_compose_suggestion
@@ -128,9 +148,23 @@ def render() -> None:
         st.session_state.accepted_compose_suggestion = None
         st.success(f"合成提案「{accepted_compose.title}」を保存しました。下の一覧から確認できます。")
 
-    suggestions = services.list_suggestions()
+    mode = st.radio(
+        "表示する提案",
+        options=["未対応", "処理済み"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="suggestions_mode",
+    )
+
+    if mode == "処理済み":
+        suggestions = _load_resolved()
+        empty_message = "処理済みの提案はまだありません。"
+    else:
+        suggestions = services.list_suggestions()
+        empty_message = "未対応の提案はありません。"
+
     if not suggestions:
-        st.info("未対応の提案はありません。")
+        st.info(empty_message)
         return
 
     st.caption(f"{len(suggestions)} 件")
