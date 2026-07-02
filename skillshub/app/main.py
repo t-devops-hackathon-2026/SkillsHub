@@ -6,7 +6,7 @@ from typing import Literal
 
 import streamlit as st
 
-from skillshub.app.views import dashboard, repos, search
+from skillshub.app.views import dashboard, detail, repos, search, suggestions
 from skillshub.app.views.components import inject_github_style
 from skillshub.shared import services
 
@@ -105,14 +105,9 @@ def _render_content() -> None:
     elif view == "search":
         search.render()
     elif view == "detail":
-        st.title("Skill 詳細")
-        st.info(f"詳細画面は準備中です（Issue #15）  ·  Skill ID: {st.session_state.selected_skill_id}")
-        if st.button("← ダッシュボードに戻る"):
-            st.session_state.current_view = "dashboard"
-            st.rerun()
+        detail.render()
     elif view == "suggestions":
-        st.title("改善の提案を確認する")
-        st.info("この画面は準備中です（Issue #15）")
+        suggestions.render()
     elif view == "repos":
         repos.render()
     else:

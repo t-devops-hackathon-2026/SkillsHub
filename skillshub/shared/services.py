@@ -27,8 +27,11 @@ from skillshub.shared.schemas import (
     RawSkill,
     SearchResult,
     Skill,
+    SkillDetail,
     SuggestionStatus,
+    SuggestionTargetRef,
     SuggestionType,
+    SuggestionView,
     UpdateStatus,
 )
 from skillshub.shared.tools import ai_tools
@@ -218,6 +221,102 @@ def list_skills(
     if tags:
         result = [s for s in result if any(t in s.tags for t in tags)]
     return result
+
+
+# ── Skill 詳細・提案レビュー ───────────────────────────────
+
+
+def _to_suggestion_view(session: Session, suggestion: models.Suggestion) -> SuggestionView:
+    """Suggestion 行を、対象 Skill 名込みのビューへ変換する。
+
+    提案は多くても数十件の想定なので、targets は提案ごとに引く（JOIN の作り込みはしない）。
+    """
+    target_rows = session.execute(
+        select(models.SuggestionTarget.skill_id, models.Skill.name)
+        .join(models.Skill, models.Skill.id == models.SuggestionTarget.skill_id)
+        .where(models.SuggestionTarget.suggestion_id == suggestion.id)
+        .order_by(models.Skill.name)
+    ).all()
+    return SuggestionView(
+        id=suggestion.id,
+        type=SuggestionType(suggestion.type),
+        content=suggestion.content,
+        status=SuggestionStatus(suggestion.status),
+        created_at=suggestion.created_at,
+        targets=[SuggestionTargetRef(skill_id=skill_id, skill_name=name) for skill_id, name in target_rows],
+    )
+
+
+def get_skill(skill_id: str) -> SkillDetail | None:
+    """Skill 詳細画面用に、Skill 本体・取得元リポジトリ・open な提案をまとめて返す。
+
+    見つからなければ ``None``（DB 初期化後に古い id で遷移してきたケースを画面側で拾う）。
+    """
+    with _session_scope() as session:
+        skill = session.get(models.Skill, UUID(skill_id))
+        if skill is None:
+            return None
+        suggestions = session.scalars(
+            select(models.Suggestion)
+            .join(models.SuggestionTarget, models.SuggestionTarget.suggestion_id == models.Suggestion.id)
+            .where(
+                models.SuggestionTarget.skill_id == skill.id,
+                models.Suggestion.status == SuggestionStatus.OPEN,
+            )
+            .order_by(models.Suggestion.created_at.desc())
+        ).all()
+        return SkillDetail(
+            skill=Skill.model_validate(skill),
+            repo_owner=skill.repository.owner,
+            repo_name=skill.repository.repo,
+            open_suggestions=[_to_suggestion_view(session, s) for s in suggestions],
+        )
+
+
+def list_suggestions(status: SuggestionStatus = SuggestionStatus.OPEN) -> list[SuggestionView]:
+    """指定ステータスの提案を新しい順に返す（提案レビュー画面用）。"""
+    with _session_scope() as session:
+        suggestions = session.scalars(
+            select(models.Suggestion)
+            .where(models.Suggestion.status == status)
+            .order_by(models.Suggestion.created_at.desc())
+        ).all()
+        return [_to_suggestion_view(session, s) for s in suggestions]
+
+
+def accept_suggestion(suggestion_id: str) -> None:
+    """提案を採用（status→accepted）する。
+
+    仕様（step1.md「提案の採用時挙動」）:
+    - merge / compose: status 更新のみ（GitHub への反映は作者が手元で行う）。
+    - update: content の diff を適用済みドラフトとして残し、対象 Skill の
+      ``update_status`` を ``current`` に戻す。
+
+    open でない提案には何もしない（再描画中の二度押しをエラーにしない）。
+    """
+    with _session_scope() as session:
+        suggestion = session.get(models.Suggestion, UUID(suggestion_id))
+        if suggestion is None:
+            raise ValueError(f"提案が見つかりません: {suggestion_id}")
+        if suggestion.status != SuggestionStatus.OPEN:
+            return
+        suggestion.status = SuggestionStatus.ACCEPTED
+        if suggestion.type == SuggestionType.UPDATE:
+            for target in suggestion.targets:
+                skill = session.get(models.Skill, target.skill_id)
+                if skill is not None:
+                    skill.update_status = UpdateStatus.CURRENT.value
+
+
+def dismiss_suggestion(suggestion_id: str) -> None:
+    """提案を却下（status→dismissed）する。open でない提案には何もしない。"""
+    with _session_scope() as session:
+        suggestion = session.get(models.Suggestion, UUID(suggestion_id))
+        if suggestion is None:
+            raise ValueError(f"提案が見つかりません: {suggestion_id}")
+        if suggestion.status != SuggestionStatus.OPEN:
+            return
+        suggestion.status = SuggestionStatus.DISMISSED
 
 
 # ── 収集パイプラインの永続化（書き込み）────────────────────
