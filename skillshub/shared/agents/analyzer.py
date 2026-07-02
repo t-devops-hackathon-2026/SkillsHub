@@ -1,7 +1,7 @@
 """AnalyzerAgent: 司書パイプライン 2 段目（構造化解析・鮮度兆候検知）。
 
 役割分担の方針に従い、Analyzer は「構造化出力組」。``output_schema``（``AnalyzedSkill``）を
-持つため tools は持たない（#7 結論：併用は experimental なので、あえて分担を維持）。モデルは
+持つため tools は持たない（ADK では併用が experimental なので、あえて分担を維持）。モデルは
 Gemini Flash 既定。SKILL.md 本文をユーザーメッセージとして渡し、name/description/tags/usage と
 古さ兆候（``is_possibly_outdated``）を構造化して返させる。
 

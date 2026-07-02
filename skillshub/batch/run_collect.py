@@ -20,7 +20,6 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
-from contextlib import contextmanager
 from pathlib import Path
 from uuid import UUID
 
@@ -28,15 +27,12 @@ from sqlalchemy import select
 
 from skillshub.shared import services
 from skillshub.shared.agents.librarian import run_librarian_for_repo
-from skillshub.shared.db import get_session
+from skillshub.shared.db import session_scope as _session_scope
 from skillshub.shared.models import Repository
 from skillshub.shared.schemas import RawSkill
 from skillshub.shared.sources.github import load_github_skills
 from skillshub.shared.sources.local import load_local_skills
 from skillshub.shared.tools.ai_tools import EmbeddingFn
-
-# get_session は commit/rollback/close を内包するジェネレータ。with で使うため CM 化する。
-_session_scope = contextmanager(get_session)
 
 _SAMPLES_ROOT = Path(__file__).resolve().parents[2] / "samples"
 _LOCAL_OWNER = "local"

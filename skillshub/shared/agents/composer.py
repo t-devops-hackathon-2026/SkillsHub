@@ -1,13 +1,11 @@
-"""ComposerAgent: 検索候補の Skill を組み合わせた合成ワークフローを構造化提案する。
+"""Composer: 検索候補の Skill を組み合わせた合成ワークフローを構造化提案する。
 
-設計（docs/designs/step1/step1.md「ADKエージェント構成」）では Composer は
-「output_schema を持つ側（tools なし）」で、重い推論なのでモデルは Pro 系を使う。
-仕様の設計判断どおり Searcher→Composer は機械的に直列化せず、サービス層
-（shared.services.search_skills）が候補数を見て 2 件以上のときだけ起動する。
+仕様の正は docs/designs/step1/step1.md「自然言語検索」。重い推論なのでモデルは Pro 系を使う。
+Searcher→Composer は機械的に直列化せず、サービス層（shared.services.search_skills）が
+候補数を見て 2 件以上のときだけ起動する。
 
 Searcher/Deduper と同じ方針で、実処理はテスト容易な純 Python（``run_composer``）として
 実装し、Gemini への構造化出力リクエストは差し替え可能（``generate_fn`` の注入）にする。
-ADK 契約用の薄い ``LlmAgent`` ラッパ（``build_composer_agent``）も用意する。
 
 LLM が生成するのは title/body のみ。対象 Skill（``target_skill_ids``）は候補から
 サービス側で機械的に埋める（UUID を LLM に生成させない）。
@@ -17,14 +15,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
 from skillshub.shared.schemas import ComposeSuggestion, SearchResultItem
-
-if TYPE_CHECKING:
-    from google.adk.agents import LlmAgent
 
 # 重い推論なので Pro 系（仕様の Flash/Pro 使い分け）。
 COMPOSER_MODEL = "gemini-2.5-pro"
@@ -34,7 +28,7 @@ _MIN_CANDIDATES_FOR_COMPOSE = 2
 
 
 class ComposerWorkflow(BaseModel):
-    """Composer（LLM）が出力するワークフロー本文。ADK の ``output_schema`` 兼 戻り値型。
+    """Composer（LLM）が出力するワークフロー本文（構造化出力のスキーマ兼 戻り値型）。
 
     対象 Skill の id は LLM に出させず、サービス側が候補から付与する（``ComposeSuggestion``）。
     """
@@ -112,25 +106,3 @@ def _generate_compose(query: str, items: list[SearchResultItem], model: str) -> 
     )
     data = json.loads(response.text)
     return ComposerWorkflow(title=str(data["title"]), body=str(data["body"]))
-
-
-def build_composer_agent(model: str = COMPOSER_MODEL) -> LlmAgent:
-    """ADK 契約用の薄い ComposerAgent を構築する（output_schema を持つ・tools なし）。
-
-    オンライン対話を ADK ``Runner`` に寄せる際の接続口。実処理は ``run_composer`` を
-    直接呼ぶため、このエージェントは MVP では未使用。import は ADK 依存を遅延させる。
-    """
-    from google.adk.agents import LlmAgent
-
-    return LlmAgent(
-        name="composer_agent",
-        model=model,
-        description="検索候補の Skill を組み合わせて目的を達成するワークフローを構造化提案する",
-        instruction=(
-            "与えられた Skill 候補を組み合わせ、ユーザーの目的を達成するワークフローを"
-            "title（短い名前）と body（手順・効果の説明）として出力してください。"
-        ),
-        output_schema=ComposerWorkflow,
-        output_key="compose_suggestion",
-        # tools は設定しない（ADK 制約: output_schema と併用不可）。
-    )
