@@ -1,4 +1,4 @@
-"""#9 完了条件のデモ: ローカル 1 リポジトリを解析して構造化結果＋鮮度を出す。
+"""ローカル samples を解析して構造化結果＋鮮度を出すデモ。
 
 ローカル samples/ の SKILL.md を Collector → Analyzer → 鮮度判定 のパイプラインに通し、
 構造化 JSON と鮮度を print する。さらに DB に永続化するので、続けて Streamlit を起動すると
@@ -52,7 +52,7 @@ def main() -> int:
     result = services.collect_local(root)
 
     processed = result["results"]
-    print(f"処理 Skill 数: {result['processed_skills']} / needs_update: {result['needs_update']}\n")
+    print(f"処理 Skill 数: {result['collected_skills']} / needs_update: {result['needs_update']}\n")
 
     if not processed:
         print("（変更分なし: 前回と content_hash が同一のためスキップされました）")

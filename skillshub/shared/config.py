@@ -50,6 +50,9 @@ def get_database_url() -> str:
 # 重複検出の類似度しきい値。過検出回避のため高め（0.88）を既定にし、環境変数で調整可能にする。
 _DEFAULT_DEDUP_THRESHOLD = 0.88
 
+# 鮮度判定: 最終コミットからの経過日数がこれ以下なら current。90 は暫定値で、実データで調整する前提。
+_DEFAULT_STALE_DAYS = 90
+
 
 def get_dedup_threshold() -> float:
     """重複検出の cosine 類似度しきい値を取得する（既定 0.88、env ``DEDUP_THRESHOLD``）。
@@ -60,3 +63,15 @@ def get_dedup_threshold() -> float:
     if not value:
         return _DEFAULT_DEDUP_THRESHOLD
     return float(value)
+
+
+def get_stale_days() -> int:
+    """鮮度 stale 判定の経過日数しきい値を取得する（既定 90、env ``UPDATE_STALE_DAYS``）。
+
+    env 未設定・空文字の場合は既定値を使う（get_secret と同じく空文字は未設定扱い）。
+    テストが env を都度差し替えるため、キャッシュせず呼び出しごとに読む。
+    """
+    value = os.environ.get("UPDATE_STALE_DAYS")
+    if not value:
+        return _DEFAULT_STALE_DAYS
+    return int(value)

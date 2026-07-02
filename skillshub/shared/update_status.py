@@ -4,24 +4,15 @@
 「参照API・依存ツールの変更を検知」した場合で、Step1 では突き合わせ先データが無いため
 Analyzer（LLM）が本文から見つけた古さ兆候フラグ（``is_possibly_outdated``）で代替する。
 
-しきい値は環境変数で調整可能（仕様: 90 は暫定値、実データで調整する前提）。
+しきい値は ``config.get_stale_days()``（env ``UPDATE_STALE_DAYS``、既定 90）で調整可能。
 """
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 
+from skillshub.shared.config import get_stale_days
 from skillshub.shared.schemas import UpdateStatus
-
-_DEFAULT_STALE_DAYS = 90
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if not raw:  # None・空文字はどちらも未設定扱い
-        return default
-    return int(raw)
 
 
 def compute_update_status(
@@ -42,7 +33,7 @@ def compute_update_status(
     if last_commit_at is None:
         return UpdateStatus.STALE
 
-    stale_days = _env_int("UPDATE_STALE_DAYS", _DEFAULT_STALE_DAYS)
+    stale_days = get_stale_days()
 
     now = datetime.now(UTC)
     # naive datetime が来た場合は UTC とみなして比較する。

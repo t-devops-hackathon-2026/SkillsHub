@@ -1,15 +1,16 @@
 """アプリ／バッチが使うサービス層。
 
 読み取り系（ダッシュボード）は実 DB を参照する。書き込み系（収集パイプラインの永続化）は
-司書バッチ（#9）が使う。``search_skills`` は埋め込み検索（#10/#12）を用いた Searcher→Composer で
+司書バッチが使う。``search_skills`` は埋め込み検索を用いた Searcher→Composer で
 候補と合成提案を返す。
 """
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import Select, func, select
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 from skillshub.shared import models
 from skillshub.shared.agents.composer import run_composer
 from skillshub.shared.agents.searcher import run_searcher
-from skillshub.shared.db import _get_engine, get_session
+from skillshub.shared.db import _get_engine, session_scope
 from skillshub.shared.schemas import (
     AnalyzedSkill,
     ComposeSuggestion,
@@ -32,8 +33,11 @@ from skillshub.shared.schemas import (
 )
 from skillshub.shared.tools import ai_tools
 
-# get_session は commit/rollback/close を内包するジェネレータ。with で使うため CM 化する。
-_session_scope = contextmanager(get_session)
+if TYPE_CHECKING:
+    from skillshub.shared.agents.librarian import LibrarianRunResult
+
+# テスト（test_services.py）が monkeypatch する差し替え点なので、モジュール属性として保持する。
+_session_scope = session_scope
 
 # 合成提案は候補が 2 件以上のときだけ Composer を起動する（仕様: 制御はサービス層に置く）。
 _MIN_CANDIDATES_FOR_COMPOSE = 2
@@ -60,8 +64,8 @@ def search_skills(query: str) -> SearchResult:
 def register_compose_suggestion(compose: ComposeSuggestion) -> UUID:
     """合成提案を suggestion(type=compose) として保存し、新規 id を返す。
 
-    検索画面（#19）の「採用」操作から呼ぶ想定。``search_skills`` は提案を返すだけで保存せず、
-    保存はこのユーザー操作に限定する（提案レビュー画面 #20 で採用/却下を扱う）。
+    検索画面の「採用」操作から呼ぶ想定。``search_skills`` は提案を返すだけで保存せず、
+    保存はこのユーザー操作に限定する（採用/却下の管理は提案レビュー画面で扱う）。
     """
     with _session_scope() as session:
         return ai_tools.create_compose_suggestion(session, compose)
@@ -70,10 +74,9 @@ def register_compose_suggestion(compose: ComposeSuggestion) -> UUID:
 def collect_repo(repo_id: str, *, embed_fn: ai_tools.EmbeddingFn | None = None) -> dict[str, object]:
     """指定リポジトリから GitHub 経由で全 Skill を収集し、フルパイプラインで DB に保存する。
 
-    収集→差分検知→解析→鮮度判定→埋め込み→重複検出 の全工程を実行する（#41 本実装）。
+    収集→差分検知→解析→鮮度判定→埋め込み→重複検出 の全工程を実行する。
     GitHub App 認証（環境変数 GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY または Secret Manager）が必要。
     """
-    from skillshub.shared.agents.librarian import run_librarian_for_repo
     from skillshub.shared.sources.github import load_github_skills
 
     repo_uuid = UUID(repo_id)
@@ -81,27 +84,47 @@ def collect_repo(repo_id: str, *, embed_fn: ai_tools.EmbeddingFn | None = None) 
         repo = session.get(models.Repository, repo_uuid)
         if repo is None:
             raise ValueError(f"リポジトリが見つかりません: {repo_id}")
-        owner = repo.owner
-        repo_name = repo.repo
+        target = f"{repo.owner}/{repo.repo}"
 
-    target = f"{owner}/{repo_name}"
+    run_result = _run_collection(repo_uuid, lambda: load_github_skills(target), embed_fn=embed_fn)
+    return _collection_summary(repo_uuid, run_result)
+
+
+def _run_collection(
+    repo_id: UUID,
+    load_raw_skills: Callable[[], list[RawSkill]],
+    *,
+    embed_fn: ai_tools.EmbeddingFn | None,
+) -> LibrarianRunResult:
+    """1 リポジトリ分の収集パイプラインを実行し、成功時に ``last_collected_at`` を更新する。
+
+    GitHub（``collect_repo``）・ローカル（``collect_local``）の両収集源から使う共通部。
+    librarian の import は ADK 依存を遅延させるため関数内で行う。
+    """
+    from skillshub.shared.agents.librarian import run_librarian_for_repo
+
     run_result = run_librarian_for_repo(
-        repo_uuid,
-        load_raw_skills=lambda: load_github_skills(target),
-        load_existing_hashes=lambda: get_existing_content_hashes(repo_uuid),
+        repo_id,
+        load_raw_skills=load_raw_skills,
+        load_existing_hashes=lambda: get_existing_content_hashes(repo_id),
         embed_fn=embed_fn,
     )
-    touch_last_collected_at(repo_uuid)
+    touch_last_collected_at(repo_id)
+    return run_result
 
-    s = run_result.stats
+
+def _collection_summary(repo_id: UUID, run_result: LibrarianRunResult) -> dict[str, object]:
+    """収集結果を呼び出し側（画面・バッチ・デモ）が使う共通の dict 形式にまとめる。"""
+    stats = run_result.stats
     return {
-        "repo_id": repo_id,
-        "collected_skills": s.collected,
-        "skipped_skills": s.skipped,
-        "needs_update": s.needs_update,
-        "merge_suggestions": s.merge_suggestions,
-        "failed": s.failed,
+        "repo_id": str(repo_id),
+        "collected_skills": stats.collected,
+        "skipped_skills": stats.skipped,
+        "needs_update": stats.needs_update,
+        "merge_suggestions": stats.merge_suggestions,
+        "failed": stats.failed,
         "status": "success",
+        "results": run_result.results,
     }
 
 
@@ -146,23 +169,22 @@ def _count(session: Session, stmt: Select[tuple[int]]) -> int:
 def list_repositories() -> list[dict[str, object]]:
     """登録済みリポジトリ一覧を Skill 件数付きで返す（リポジトリ登録画面用）。"""
     with Session(_get_engine()) as session:
-        repos = session.scalars(select(models.Repository).order_by(models.Repository.created_at)).all()
-        result: list[dict[str, object]] = []
-        for repo in repos:
-            skill_count = _count(
-                session,
-                select(func.count()).select_from(models.Skill).where(models.Skill.repo_id == repo.id),
-            )
-            result.append(
-                {
-                    "id": str(repo.id),
-                    "owner": repo.owner,
-                    "repo": repo.repo,
-                    "last_collected_at": repo.last_collected_at,
-                    "skill_count": skill_count,
-                }
-            )
-    return result
+        rows = session.execute(
+            select(models.Repository, func.count(models.Skill.id))
+            .outerjoin(models.Skill, models.Skill.repo_id == models.Repository.id)
+            .group_by(models.Repository.id)
+            .order_by(models.Repository.created_at)
+        ).all()
+    return [
+        {
+            "id": str(repo.id),
+            "owner": repo.owner,
+            "repo": repo.repo,
+            "last_collected_at": repo.last_collected_at,
+            "skill_count": skill_count,
+        }
+        for repo, skill_count in rows
+    ]
 
 
 def list_all_tags() -> list[str]:
@@ -262,26 +284,24 @@ def _persist_analyzed_skill(
 
     session.flush()  # 新規 Skill の id を採番 / 既存提案の探索にも id が要る
 
-    # 同じ Skill を指す既存の open な update 提案は、今回のステータスに関わらず一旦 dismiss する。
-    # needs_update 継続時は直後に最新の下書きを open で作り直し、current/stale へ戻ったときは
-    # 不要な提案を open のまま残さない。新規 Skill には既存提案が無いのでスキップ。
+    # dismiss の方針は docstring 参照。新規 Skill には既存提案が無いのでスキップ。
     if not is_new:
         stale_updates = session.scalars(
             select(models.Suggestion)
             .join(models.SuggestionTarget, models.SuggestionTarget.suggestion_id == models.Suggestion.id)
             .where(
                 models.SuggestionTarget.skill_id == skill.id,
-                models.Suggestion.type == "update",
-                models.Suggestion.status == "open",
+                models.Suggestion.type == SuggestionType.UPDATE,
+                models.Suggestion.status == SuggestionStatus.OPEN,
             )
             .order_by(models.Suggestion.created_at)
         ).all()
         for stale in stale_updates:
-            stale.status = "dismissed"
+            stale.status = SuggestionStatus.DISMISSED
 
     saved_suggestion = False
     if update_status is UpdateStatus.NEEDS_UPDATE and update_draft:
-        suggestion = models.Suggestion(type="update", content=update_draft, status="open")
+        suggestion = models.Suggestion(type=SuggestionType.UPDATE, content=update_draft, status=SuggestionStatus.OPEN)
         session.add(suggestion)
         session.flush()  # suggestion の id 採番後にブリッジを張る
         session.add(models.SuggestionTarget(suggestion_id=suggestion.id, skill_id=skill.id))
@@ -332,29 +352,14 @@ def collect_local(
     *,
     embed_fn: ai_tools.EmbeddingFn | None = None,
 ) -> dict[str, object]:
-    """ローカル samples を収集・解析し、埋め込み・重複検出まで含めて DB に永続化する（#9 / #16）。
+    """ローカル samples を収集・解析し、埋め込み・重複検出まで含めて DB に永続化する。
 
-    司書の統括（``run_librarian_for_repo``）にローカル収集源を渡すだけの薄いラッパ。GitHub
-    モードの収集（``collect_repo`` / #41）と置き換え可能な形に揃えてある。``embed_fn`` 未指定
-    なら Vertex AI（テスト・オフラインでは決定論フェイクを注入）。
+    GitHub モードの収集（``collect_repo``）と同じ共通部（``_run_collection``）に
+    ローカル収集源を渡すだけの薄いラッパ。``embed_fn`` 未指定なら Vertex AI
+    （テスト・オフラインでは決定論フェイクを注入）。
     """
-    from skillshub.shared.agents.librarian import run_librarian_for_repo
     from skillshub.shared.sources.local import load_local_skills
 
     repo_id = get_or_create_repository(owner, repo)
-    run_result = run_librarian_for_repo(
-        repo_id,
-        load_raw_skills=lambda: load_local_skills(root),
-        load_existing_hashes=lambda: get_existing_content_hashes(repo_id),
-        embed_fn=embed_fn,
-    )
-    touch_last_collected_at(repo_id)
-
-    stats = run_result.stats
-    return {
-        "repo_id": str(repo_id),
-        "processed_skills": stats.collected,
-        "needs_update": stats.needs_update,
-        "merge_suggestions": stats.merge_suggestions,
-        "results": run_result.results,
-    }
+    run_result = _run_collection(repo_id, lambda: load_local_skills(root), embed_fn=embed_fn)
+    return _collection_summary(repo_id, run_result)

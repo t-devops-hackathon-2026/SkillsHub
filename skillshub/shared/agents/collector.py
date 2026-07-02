@@ -1,6 +1,7 @@
 """CollectorAgent: 司書パイプライン 1 段目（収集係）。
 
-役割分担の方針（#7 結論）に従い、Collector は「tools 組（構造化出力なし）」。ただし収集
+役割分担の方針（ADK では tools と output_schema の併用が experimental のため、各エージェントを
+「tools 組」か「構造化出力組」のどちらかに寄せる）に従い、Collector は「tools 組」。ただし収集
 ロジック（走査・取得・hash 計算）は ``github_tools`` / ``sources.local`` に確定的な関数として
 完成しているため、それを LLM に判断させる意味は無い。よって Collector は ADK の custom
 ``BaseAgent`` として確定的に動き、変更分だけを ``output_key`` 経由で後段へ渡す。

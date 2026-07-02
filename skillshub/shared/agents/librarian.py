@@ -1,14 +1,14 @@
 """司書オーケストレーション: Collector → Analyzer → 鮮度判定 → 永続化 → 埋め込み → 重複検出。
 
-#9 で Collector（ADK BaseAgent・output_key で受け渡し）→ Analyzer（ADK LlmAgent・構造化）→
-鮮度判定（コード）→ needs_update なら update 下書き生成、までを DB 非依存で組んだ
-（``collect_and_analyze``）。#16 でこれを 1 リポジトリ分のバッチに拡張し、永続化と
-埋め込み生成・重複検出（``run_deduper_for_skill``）まで一気通貫で行う統括関数
-``run_librarian_for_repo`` を追加した。
+``collect_and_analyze`` が、収集（Collector: ADK BaseAgent・output_key で受け渡し）→
+解析（Analyzer: ADK LlmAgent・構造化）→ 鮮度判定（コード）→ needs_update なら update
+下書き生成、までを DB 非依存で行う。``run_librarian_for_repo`` はそれを 1 リポジトリ分の
+バッチとして統括し、永続化と埋め込み生成・重複検出（``run_deduper_for_skill``）まで
+一気通貫で実行する。
 
 役割分担: Collector / Analyzer は ADK で動かすが、Embed / Dedup は決定論的処理なので
-（#7 結論に従い）ADK エージェント化せず関数を直接呼ぶ。DB 書き込みの実体は
-``shared.services`` / ``shared.tools.ai_tools`` に委譲し、本モジュールは流れの統括に徹する。
+ADK エージェント化せず関数を直接呼ぶ。DB 書き込みの実体は ``shared.services`` /
+``shared.tools.ai_tools`` に委譲し、本モジュールは流れの統括に徹する。
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ import asyncio
 import sys
 import uuid
 from collections.abc import Callable
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -176,10 +175,9 @@ def run_librarian_for_repo(
     1 つの session（＝1トランザクション）にまとめ、Skill だけ保存されて埋め込み/提案が欠ける
     不整合を防ぐ。``embed_fn`` 未指定なら Vertex AI（テストは決定論フェイクを注入）。
     """
-    from skillshub.shared.db import get_session
+    from skillshub.shared.db import session_scope
 
     results, meta = asyncio.run(collect_and_analyze(load_raw_skills, load_existing_hashes))
 
-    session_scope = contextmanager(get_session)
     with session_scope() as session:
         return persist_and_dedup(session, repo_id, results, meta, embed_fn=embed_fn)
