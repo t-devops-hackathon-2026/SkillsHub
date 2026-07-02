@@ -1,2 +1,10 @@
 [client]
 toolbarMode = "minimal"
+
+# GitHub Primer 風の配色（詳細は skillshub/app/views/components.py のグローバル CSS が担う）
+[theme]
+base = "light"
+primaryColor = "#0969da"
+backgroundColor = "#f6f8fa"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#1f2328"

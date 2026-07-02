@@ -78,11 +78,11 @@ def _render_repo_list() -> None:
         owner = str(r["owner"])
         repo = str(r["repo"])
         last_at = r["last_collected_at"]
-        skill_count = int(str(r["skill_count"]))
+        skill_count = r["skill_count"]
         repo_id = str(r["id"])
 
         clicked = False
-        with st.container(border=True):
+        with st.container(border=True, key=f"repo_box_{repo_id}"):
             col_info, col_btn = st.columns([5, 1])
 
             with col_info:
@@ -101,8 +101,7 @@ def _render_repo_list() -> None:
                     skipped = result["skipped_skills"]
                     _set_flash(
                         "success",
-                        f"✅ `{owner}/{repo}` の収集が完了しました。"
-                        f"　取得: {collected} 件　／　スキップ: {skipped} 件",
+                        f"✅ `{owner}/{repo}` の収集が完了しました。　取得: {collected} 件　／　スキップ: {skipped} 件",
                     )
                     st.rerun()
                 except Exception as exc:
@@ -111,8 +110,8 @@ def _render_repo_list() -> None:
 
 
 def render() -> None:
-    st.subheader("📦 リポジトリ登録")
-    st.caption("GitHub App がインストールされたリポジトリを登録し、SKILL.md を収集します。")
+    st.subheader("収集元を追加する")
+    st.caption("GitHub App がインストールされたリポジトリを登録すると、エージェントがスキル（SKILL.md）を収集します。")
     st.divider()
 
     _render_flash()

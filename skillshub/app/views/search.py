@@ -5,12 +5,12 @@ import time
 
 import streamlit as st
 
+from skillshub.app.views.components import navigate_to_detail, update_status_badge
 from skillshub.shared import services
 from skillshub.shared.schemas import (
     ComposeSuggestion,
     SearchResult,
     SearchResultItem,
-    UpdateStatus,
 )
 
 # エージェントの「途中表示」段階。デモ映え用に解析→横断検索→照合の3段で見せる。
@@ -28,31 +28,10 @@ _GREETING: str = (
     "（例: 議事録を要約したい）"
 )
 
-_UPDATE_STATUS_CONFIG: dict[UpdateStatus, tuple[str, str, str]] = {
-    UpdateStatus.CURRENT: ("最新", "#dafbe1", "#1a7f37"),
-    UpdateStatus.STALE: ("要注意", "#fff8c5", "#9a6700"),
-    UpdateStatus.NEEDS_UPDATE: ("要更新", "#ffebe9", "#cf222e"),
-}
-
-
-def _update_status_badge(status: UpdateStatus) -> str:
-    label, bg, color = _UPDATE_STATUS_CONFIG[status]
-    return (
-        f'<span style="background:{bg};color:{color};padding:2px 10px;'
-        f'border-radius:12px;font-size:12px;font-weight:600;display:inline-block">'
-        f"{label}</span>"
-    )
-
 
 def _seed_greeting() -> None:
     if not st.session_state.chat_history:
         st.session_state.chat_history.append({"role": "assistant", "content": _GREETING})
-
-
-def _navigate_to_detail(skill_id: str) -> None:
-    st.session_state.selected_skill_id = skill_id
-    st.session_state.current_view = "detail"
-    st.rerun()
 
 
 def _accept_compose(compose: ComposeSuggestion, save_key: str) -> None:
@@ -74,16 +53,22 @@ def _accept_compose(compose: ComposeSuggestion, save_key: str) -> None:
 
 def _render_item_card(item: SearchResultItem, key_prefix: str) -> None:
     skill = item.skill
-    with st.container(border=True):
-        st.markdown(_update_status_badge(skill.update_status), unsafe_allow_html=True)
-
-        if st.button(
-            skill.name,
-            key=f"{key_prefix}_card_{skill.id}",
-            use_container_width=True,
-            help="クリックして詳細を表示",
-        ):
-            _navigate_to_detail(str(skill.id))
+    with st.container(border=True, key=f"{key_prefix}_box"):
+        # ダッシュボードのカードと同じ「スキル名＋状態バッジ」のヘッダー行に揃える。
+        title_col, badge_col = st.columns([3, 1.2], vertical_alignment="center")
+        with title_col:
+            if st.button(
+                skill.name,
+                key=f"{key_prefix}_card_{skill.id}",
+                use_container_width=True,
+                help="クリックして詳細を表示",
+            ):
+                navigate_to_detail(str(skill.id))
+        with badge_col:
+            st.markdown(
+                f'<div style="text-align:right">{update_status_badge(skill.update_status)}</div>',
+                unsafe_allow_html=True,
+            )
 
         st.caption(skill.description)
         st.progress(item.confidence, text=f"確信度 {round(item.confidence * 100)}%")
@@ -95,8 +80,8 @@ def _render_item_card(item: SearchResultItem, key_prefix: str) -> None:
 
 
 def _render_compose(compose: ComposeSuggestion, key_prefix: str) -> None:
-    with st.container(border=True):
-        st.markdown(f"**🔗 合成ワークフローの提案** — {html.escape(compose.title)}")
+    with st.container(border=True, key=f"{key_prefix}_compose_box"):
+        st.markdown(f"**合成ワークフローの提案** — {html.escape(compose.title)}")
         st.caption(compose.body)
         # 一度採用した提案カードは保存済み表示にして、再描画時の二重保存を防ぐ。
         if key_prefix in st.session_state.saved_compose_keys:
@@ -155,7 +140,8 @@ def _run_search(query: str) -> None:
 
 
 def render() -> None:
-    st.title("🔍 自然言語検索")
+    st.title("スキルを探す")
+    st.caption("やりたいことを書くと、エージェントが社内のスキルから最適な候補を提案します。")
     _seed_greeting()
     _render_history()
 

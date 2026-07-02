@@ -4,41 +4,20 @@ import html
 
 import streamlit as st
 
+from skillshub.app.views.components import navigate_to_detail, tag_chip, update_status_badge
 from skillshub.shared import services
-from skillshub.shared.schemas import Skill, UpdateStatus
-
-_UPDATE_STATUS_CONFIG: dict[UpdateStatus, tuple[str, str, str]] = {
-    UpdateStatus.CURRENT: ("最新", "#dafbe1", "#1a7f37"),
-    UpdateStatus.STALE: ("要注意", "#fff8c5", "#9a6700"),
-    UpdateStatus.NEEDS_UPDATE: ("要更新", "#ffebe9", "#cf222e"),
-}
+from skillshub.shared.schemas import Skill
 
 _UPDATE_STATUS_OPTIONS: dict[str, str] = {
-    "": "鮮度: すべて",
+    "": "状態: すべて",
     "current": "最新",
-    "stale": "要注意",
+    "stale": "長期未更新",
     "needs_update": "要更新",
 }
 
 
-def _update_status_badge(status: UpdateStatus) -> str:
-    label, bg, color = _UPDATE_STATUS_CONFIG[status]
-    return (
-        f'<span style="background:{bg};color:{color};padding:2px 10px;'
-        f'border-radius:12px;font-size:12px;font-weight:600;display:inline-block">'
-        f"{label}</span>"
-    )
-
-
-def _tag_chip(tag: str) -> str:
-    safe = html.escape(tag)
-    return (
-        f'<span style="background:#ddf4ff;color:#0969da;padding:1px 8px;'
-        f'border-radius:12px;font-size:12px">{safe}</span>'
-    )
-
-
 def _render_agent_bar() -> None:
+    st.markdown('<div class="sh-ai-eyebrow">✦ エージェントに聞く</div>', unsafe_allow_html=True)
     col1, col2 = st.columns([6, 1])
     with col1:
         query = st.text_input(
@@ -64,7 +43,7 @@ def _render_summary_cards() -> None:
     with c3:
         st.metric("要更新", summary.needs_update)
     with c4:
-        st.metric("陳腐化注意", summary.stale_count)
+        st.metric("長期未更新", summary.stale_count)
 
 
 _SORT_OPTIONS: dict[str, str] = {
@@ -84,7 +63,7 @@ def _render_filters(all_tags: list[str]) -> tuple[str, str, list[str], str]:
     with col2:
         update_status: str = (
             st.selectbox(
-                "鮮度",
+                "状態",
                 options=list(_UPDATE_STATUS_OPTIONS.keys()),
                 format_func=lambda x: _UPDATE_STATUS_OPTIONS.get(x, x),
                 label_visibility="collapsed",
@@ -115,12 +94,6 @@ def _render_filters(all_tags: list[str]) -> tuple[str, str, list[str], str]:
     return keyword, update_status, selected_tags, sort_by
 
 
-def _navigate_to_detail(skill: Skill) -> None:
-    st.session_state.selected_skill_id = str(skill.id)
-    st.session_state.current_view = "detail"
-    st.rerun()
-
-
 def _render_skill_cards(skills: list[Skill]) -> None:
     if not skills:
         st.info("条件に一致する Skill が見つかりませんでした。")
@@ -130,41 +103,45 @@ def _render_skill_cards(skills: list[Skill]) -> None:
 
     cols = st.columns(3, gap="medium")
     for i, skill in enumerate(skills):
-        with cols[i % 3], st.container(border=True):
-            st.markdown(_update_status_badge(skill.update_status), unsafe_allow_html=True)
-
-            if st.button(
-                skill.name,
-                key=f"skill_card_{skill.id}",
-                use_container_width=True,
-                help="クリックして詳細を表示",
-            ):
-                _navigate_to_detail(skill)
+        with cols[i % 3], st.container(border=True, key=f"skill_box_{skill.id}"):
+            # ヘッダー行: スキル名（主役）＋ 状態バッジ。取得元パスは詳細画面に任せて出さない。
+            title_col, badge_col = st.columns([3, 1.2], vertical_alignment="center")
+            with title_col:
+                if st.button(
+                    skill.name,
+                    key=f"skill_card_{skill.id}",
+                    use_container_width=True,
+                    help="クリックして詳細を表示",
+                ):
+                    navigate_to_detail(str(skill.id))
+            with badge_col:
+                st.markdown(
+                    f'<div style="text-align:right">{update_status_badge(skill.update_status)}</div>',
+                    unsafe_allow_html=True,
+                )
 
             desc = skill.description
             if len(desc) > 90:
                 desc = desc[:90] + "…"
             st.caption(desc)
 
-            tags_html = " ".join(_tag_chip(t) for t in skill.tags)
-            st.markdown(tags_html, unsafe_allow_html=True)
-
+            # フッター行: タグ（最大3個＋残数）とスキルの出所（作者）を1行にまとめる。
+            shown_tags = skill.tags[:3]
+            tags_html = " ".join(tag_chip(t) for t in shown_tags)
+            rest = len(skill.tags) - len(shown_tags)
+            if rest > 0:
+                tags_html += f' <span style="font-size:11px;color:#8c959f">+{rest}</span>'
             author = html.escape(skill.author or "不明")
-            updated = skill.last_updated.strftime("%Y-%m-%d") if skill.last_updated else "-"
             st.markdown(
-                f'<p style="font-size:12px;color:#59636e;margin:6px 0 0">@{author} · 更新: {updated}</p>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f'<p style="font-size:11px;color:#8c959f;margin:2px 0 0;font-family:monospace">'
-                f"{html.escape(skill.source_path)}</p>",
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'gap:8px;margin:4px 0 2px">'
+                f'<span style="white-space:nowrap;overflow:hidden">{tags_html}</span>'
+                f'<span style="font-size:12px;color:#59636e;white-space:nowrap">@{author}</span></div>',
                 unsafe_allow_html=True,
             )
 
 
 def render() -> None:
-    st.subheader("ダッシュボード")
-
     _render_agent_bar()
     st.divider()
     _render_summary_cards()

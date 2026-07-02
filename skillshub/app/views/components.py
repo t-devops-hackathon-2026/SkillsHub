@@ -1,0 +1,239 @@
+"""ビュー間で共有する小さな UI 部品（バッジ・チップ・画面遷移）。
+
+dashboard / search の両方が使う表示ロジックをここに集約し、色や文言の定義が
+ビューごとに食い違わないようにする。
+"""
+
+from __future__ import annotations
+
+import html
+
+import streamlit as st
+
+from skillshub.shared.schemas import UpdateStatus
+
+# 更新状態 → (表示ラベル, 背景色, 文字色)。GitHub Primer 風の配色。
+UPDATE_STATUS_CONFIG: dict[UpdateStatus, tuple[str, str, str]] = {
+    UpdateStatus.CURRENT: ("最新", "#dafbe1", "#1a7f37"),
+    UpdateStatus.STALE: ("長期未更新", "#fff8c5", "#9a6700"),
+    UpdateStatus.NEEDS_UPDATE: ("要更新", "#ffebe9", "#cf222e"),
+}
+
+
+def update_status_badge(status: UpdateStatus) -> str:
+    label, bg, color = UPDATE_STATUS_CONFIG[status]
+    return (
+        f'<span style="background:{bg};color:{color};padding:2px 10px;'
+        f"border-radius:12px;font-size:12px;font-weight:600;display:inline-block;"
+        f'white-space:nowrap">{label}</span>'
+    )
+
+
+def tag_chip(tag: str) -> str:
+    safe = html.escape(tag)
+    return (
+        f'<span style="background:#ddf4ff;color:#0969da;padding:1px 8px;'
+        f'border-radius:12px;font-size:12px">{safe}</span>'
+    )
+
+
+def navigate_to_detail(skill_id: str) -> None:
+    st.session_state.selected_skill_id = skill_id
+    st.session_state.current_view = "detail"
+    st.rerun()
+
+
+# GitHub Primer 風のグローバル CSS。配色・角丸・影のトークンは demos/step1/demo.html と揃える。
+# Streamlit の DOM は data-testid で指しており、バージョン更新で外れた場合は該当ルールだけ
+# 効かなくなる（表示が壊れることはない）。
+_GITHUB_STYLE = """
+<style>
+:root{
+  --gh-bg:#f6f8fa; --gh-card:#ffffff;
+  --gh-ink:#1f2328; --gh-muted:#59636e;
+  --gh-line:#d1d9e0; --gh-line-soft:#eaeef2;
+  --gh-accent:#0969da; --gh-accent-soft:#ddf4ff;
+  --gh-success:#1f883d; --gh-success-h:#1a7f37;
+  --gh-btn:#f6f8fa; --gh-btn-h:#eef1f4; --gh-btn-bd:rgba(31,35,40,.15);
+  --gh-ai:#8250df;
+  --gh-grad:linear-gradient(135deg,#0969da 0%,#8250df 100%);
+  --gh-shadow:0 1px 0 rgba(31,35,40,.04);
+  --gh-shadow-2:0 3px 8px rgba(31,35,40,.09);
+  --gh-shadow-3:0 8px 20px rgba(31,35,40,.14);
+}
+
+/* ── ベース ── */
+html, body, .stApp{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Kaku Gothic ProN",
+    "Noto Sans JP",Helvetica,Arial,sans-serif;
+}
+.stApp{background:var(--gh-bg)}
+[data-testid="stHeader"]{background:rgba(246,248,250,.88);backdrop-filter:blur(4px)}
+.block-container{max-width:1100px;padding-top:2.4rem;padding-bottom:4rem}
+#MainMenu, footer{visibility:hidden}
+h1,h2,h3{color:var(--gh-ink);font-weight:600;letter-spacing:0}
+hr{border-color:var(--gh-line-soft)}
+a{color:var(--gh-accent)}
+
+/* ── サイドバー：GitHub SideNav 風 ── */
+[data-testid="stSidebar"]{background:var(--gh-card);border-right:1px solid var(--gh-line)}
+[data-testid="stSidebar"] .stButton button{
+  width:100%;justify-content:flex-start;text-align:left;
+  background:transparent;border:0;box-shadow:none;border-radius:6px;
+  color:var(--gh-muted);font-weight:500;padding:.42rem .75rem;transition:background .12s ease}
+[data-testid="stSidebar"] .stButton button:hover{background:#f3f4f6;color:var(--gh-ink)}
+[data-testid="stSidebar"] .stButton button[kind="primary"],
+[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"]{
+  background:var(--gh-accent-soft);color:var(--gh-accent);font-weight:600}
+.sh-logo{display:flex;align-items:center;gap:9px;font-size:1.08rem;font-weight:600;color:var(--gh-ink)}
+.sh-mark{display:grid;place-items:center;width:27px;height:27px;border-radius:6px;
+  background:var(--gh-ink);color:#fff;font-size:14px;font-weight:600}
+
+/* サイドバーの折りたたみボタンはホバー時のみ表示が既定なので、常時表示にする */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarHeader"] button{
+  opacity:1 !important;visibility:visible !important}
+
+/* サイドバーヘッダーは折りたたみボタンだけなので右上に浮かせ、
+   コンテンツ（ロゴ）を最上部から始めてボタンと同じ高さに揃える */
+[data-testid="stSidebarHeader"]{position:absolute;top:0;right:0;z-index:2;padding:16px 14px 0 0}
+[data-testid="stSidebarHeader"] [data-testid="stLogoSpacer"]{display:none}
+[data-testid="stSidebarUserContent"]{padding-top:24px}
+
+/* ── ボタン：Primer btn / btn-primary ── */
+.stButton button, [data-testid="stFormSubmitButton"] button{
+  border-radius:6px;font-weight:600;font-size:.85rem;
+  border:1px solid var(--gh-btn-bd);background:var(--gh-btn);color:var(--gh-ink);
+  box-shadow:var(--gh-shadow);transition:background .12s ease}
+.stButton button:hover, [data-testid="stFormSubmitButton"] button:hover{
+  background:var(--gh-btn-h);border-color:var(--gh-btn-bd);color:var(--gh-ink)}
+[data-testid="stMain"] .stButton button[kind="primary"],
+[data-testid="stMain"] [data-testid="stFormSubmitButton"] button[kind="primary"],
+section.main .stButton button[kind="primary"],
+section.main [data-testid="stFormSubmitButton"] button[kind="primary"]{
+  background:var(--gh-success);border-color:rgba(31,35,40,.15);color:#fff;
+  box-shadow:0 1px 0 rgba(31,35,40,.1)}
+[data-testid="stMain"] .stButton button[kind="primary"]:hover,
+[data-testid="stMain"] [data-testid="stFormSubmitButton"] button[kind="primary"]:hover,
+section.main .stButton button[kind="primary"]:hover,
+section.main [data-testid="stFormSubmitButton"] button[kind="primary"]:hover{
+  background:var(--gh-success-h);color:#fff}
+
+/* ── border 付きコンテナ：Primer Box（カード）──
+   st.container(border=True, key=...) の key（skill_box_ / _box / repo_box_）で狙う。 */
+.stVerticalBlock[class*="st-key-skill_box_"],
+.stVerticalBlock[class*="st-key-hist_"],
+.stVerticalBlock[class*="st-key-repo_box_"]{
+  background:var(--gh-card);border:1px solid var(--gh-line);border-radius:8px;
+  padding:1rem 1rem 1.25rem;box-shadow:var(--gh-shadow),var(--gh-shadow-2);
+  transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
+.stVerticalBlock[class*="st-key-skill_box_"]:hover,
+.stVerticalBlock[class*="st-key-hist_"]:hover{
+  border-color:#afb8c1;box-shadow:var(--gh-shadow-3);transform:translateY(-2px)}
+[data-testid="stForm"]{background:var(--gh-card);border:1px solid var(--gh-line);
+  border-radius:8px;box-shadow:var(--gh-shadow),var(--gh-shadow-2)}
+
+/* カード内は要素間隔を詰めて「名前・説明・タグ」をひとかたまりに見せる。
+   説明は常に2行分の高さを取り、カードの高さを揃える。 */
+.stVerticalBlock[class*="st-key-skill_box_"]{gap:.45rem}
+.stVerticalBlock[class*="st-key-skill_box_"] [data-testid="stCaptionContainer"] p{
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  min-height:2.9em;font-size:.85rem;color:#454c54;line-height:1.7}
+
+/* 中央寄せの矯正：タイトルリンク・サイドバー・メトリクスは左揃え
+   （ボタン内側の flex ラッパーが中央寄せのため、内側まで指定する） */
+div[class*="st-key-"][class*="_card_"] button p{text-align:left;width:100%;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+div[class*="st-key-"][class*="_card_"] button>div{justify-content:flex-start;width:100%;min-width:0}
+[data-testid="stSidebar"] .stButton button p{text-align:left;width:100%}
+[data-testid="stSidebar"] .stButton button>div{justify-content:flex-start;width:100%}
+[data-testid="stMetric"]{text-align:left}
+
+/* ── Skill カードのタイトル（key に "_card_" を含むボタン）：リンク風 ── */
+div[class*="st-key-"][class*="_card_"] button{
+  background:transparent;border:0;box-shadow:none;padding:0;
+  color:var(--gh-accent);font-weight:600;font-size:1.05rem;
+  justify-content:flex-start;text-align:left}
+div[class*="st-key-"][class*="_card_"] button:hover{
+  background:transparent;color:var(--gh-accent);text-decoration:underline}
+
+/* ── サマリー（st.metric）── */
+[data-testid="stMetric"]{background:var(--gh-card);border:1px solid var(--gh-line);
+  border-radius:8px;padding:14px 16px;box-shadow:var(--gh-shadow),var(--gh-shadow-2)}
+[data-testid="stMetricLabel"]{color:var(--gh-muted)}
+[data-testid="stMetricValue"]{font-weight:600}
+
+/* ── 入力・セレクト：Primer form control ── */
+.stTextInput input{background:var(--gh-card);border:1px solid var(--gh-line);
+  border-radius:6px;color:var(--gh-ink)}
+.stTextInput input:focus{border-color:var(--gh-accent);box-shadow:0 0 0 3px rgba(9,105,218,.15)}
+[data-baseweb="select"]>div{background:var(--gh-card);border-color:var(--gh-line);border-radius:6px}
+[data-baseweb="select"]:hover>div{border-color:#afb8c1}
+[data-testid="stChatInput"]{background:var(--gh-card);border:1px solid var(--gh-line);border-radius:6px}
+
+/* マルチセレクトの選択タグ：既定の赤ではなく Primer のトピックタグ風に */
+.stMultiSelect [data-baseweb="tag"]{
+  background:var(--gh-accent-soft);color:var(--gh-accent);border-radius:2em}
+.stMultiSelect [data-baseweb="tag"] span{color:var(--gh-accent)}
+.stMultiSelect [data-baseweb="tag"] svg{fill:var(--gh-accent)}
+
+/* ── チャット：GitHub の issue コメント風 ── */
+[data-testid="stChatMessage"]{background:var(--gh-card);border:1px solid var(--gh-line);
+  border-radius:6px;box-shadow:var(--gh-shadow);padding:.85rem 1rem}
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]){
+  background:var(--gh-accent-soft);border-color:#b6e3ff}
+
+/* ── ステータス・アラート ── */
+[data-testid="stExpander"]{background:var(--gh-card);border:1px solid var(--gh-line);border-radius:8px}
+[data-testid="stAlert"]{border-radius:8px}
+
+/* ── 司書エージェント：Copilot 風のグラデーションで「AI が触れる場所」を示す ──
+   グラデーションは検索バー・確信度・チャットのエージェント発言だけに限定する。 */
+.sh-ai-eyebrow{display:inline-block;font-size:12px;font-weight:600;letter-spacing:.02em;
+  background:var(--gh-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+div[class*="st-key-agent_bar_query"] input{
+  border:1px solid transparent;border-radius:8px;
+  background:linear-gradient(var(--gh-card),var(--gh-card)) padding-box,var(--gh-grad) border-box;
+  box-shadow:var(--gh-shadow-2)}
+div[class*="st-key-agent_bar_query"] input:focus{
+  border-color:transparent;box-shadow:0 0 0 3px rgba(130,80,223,.18)}
+div[class*="st-key-agent_bar_submit"] button{
+  background:var(--gh-grad);color:#fff;border:0;font-weight:600;box-shadow:var(--gh-shadow-2)}
+div[class*="st-key-agent_bar_submit"] button:hover{
+  background:var(--gh-grad);color:#fff;filter:brightness(1.07)}
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]){
+  border-left:3px solid var(--gh-ai)}
+.stProgress > div > div > div > div{background:var(--gh-grad)}
+
+/* サイドバーの同期パネル */
+.sh-last{color:var(--gh-muted);font-size:12px;text-align:center;margin:8px 0 0}
+[data-testid="stSidebar"] div[class*="st-key-sync_all"] .stButton button{
+  background:var(--gh-success);border:1px solid rgba(31,35,40,.15);color:#fff;
+  font-weight:600;box-shadow:var(--gh-shadow-2)}
+[data-testid="stSidebar"] div[class*="st-key-sync_all"] .stButton button:hover{
+  background:var(--gh-success-h);color:#fff}
+[data-testid="stSidebar"] div[class*="st-key-sync_all"] .stButton button p{
+  text-align:center;width:100%}
+[data-testid="stSidebar"] div[class*="st-key-sync_all"] .stButton button>div{
+  justify-content:center}
+
+/* ── レスポンシブ：640px 以下でカラムを縦積みに ── */
+@media (max-width:640px){
+  .block-container{padding-left:1rem;padding-right:1rem;padding-top:1.4rem}
+  [data-testid="stHorizontalBlock"]{flex-wrap:wrap}
+  [data-testid="stHorizontalBlock"]>[data-testid="stColumn"],
+  [data-testid="stHorizontalBlock"]>[data-testid="column"]{
+    min-width:100% !important;flex:1 1 100% !important}
+  [data-testid="stMetric"]{padding:10px 12px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:.01ms !important;animation-duration:.01ms !important}
+}
+</style>
+"""
+
+
+def inject_github_style() -> None:
+    """GitHub Primer 風のグローバル CSS を注入する（各再描画の先頭で1回呼ぶ）。"""
+    st.markdown(_GITHUB_STYLE, unsafe_allow_html=True)
