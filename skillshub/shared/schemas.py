@@ -85,6 +85,36 @@ class Suggestion(SuggestionBase):
     model_config = {"from_attributes": True}
 
 
+class SuggestionTargetRef(BaseModel):
+    """提案が指す Skill への参照（画面でリンク・名前表示に使う）。"""
+
+    skill_id: UUID
+    skill_name: str
+
+
+class SuggestionView(BaseModel):
+    """提案レビュー画面・Skill 詳細画面で表示する 1 提案分のビュー。
+
+    ``content`` は type=update のとき diff 下書き（er.md: diff は content に内包）。
+    """
+
+    id: UUID
+    type: SuggestionType
+    content: str
+    status: SuggestionStatus
+    created_at: datetime
+    targets: list[SuggestionTargetRef] = Field(default_factory=list)
+
+
+class SkillDetail(BaseModel):
+    """Skill 詳細画面用。取得元リポジトリ情報と open な提案を同梱する。"""
+
+    skill: Skill
+    repo_owner: str
+    repo_name: str
+    open_suggestions: list[SuggestionView] = Field(default_factory=list)
+
+
 # ── 司書バッチ: Collector → Analyzer 受け渡し ──────────────
 
 
@@ -123,6 +153,19 @@ class AnalyzedSkill(BaseModel):
         default=None,
         description="is_possibly_outdated が true のとき、その根拠（どの参照が古いか）",
     )
+
+
+class UpdateDraft(BaseModel):
+    """update 提案のドラフト（``output_schema``）。
+
+    「こういう状況だから、こう直せば？」を管理者が数秒で読み取れるよう、
+    状況・提案・diff を分けて生成させる。DB 保存時は 1 つのテキスト
+    （suggestions.content）に整形して内包する（er.md: diff カラムは持たない）。
+    """
+
+    situation: str = Field(description="何がどう古いのか（1〜2文）")
+    proposal: str = Field(description="どう直せばよいか（1〜2文、方向性を言い切る）")
+    diff: str = Field(description="修正方針を示す unified diff（コードフェンスや説明文は含めない）")
 
 
 # ── 検索結果 ───────────────────────────────────────────

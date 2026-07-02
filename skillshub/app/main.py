@@ -6,7 +6,7 @@ from typing import Literal
 
 import streamlit as st
 
-from skillshub.app.views import dashboard, repos, search
+from skillshub.app.views import dashboard, detail, repos, search, suggestions
 from skillshub.app.views.components import inject_github_style
 from skillshub.shared import services
 
@@ -37,7 +37,7 @@ def _render_sidebar() -> None:
     nav_items = [
         ("dashboard", "スキル一覧"),
         ("search", "スキルを探す"),
-        ("suggestions", "改善の提案を確認する"),
+        ("suggestions", "提案を確認する"),
         ("repos", "収集元を追加する"),
     ]
 
@@ -79,9 +79,14 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
     with st.status("エージェントが同期中…", expanded=True) as status:
         for r in repositories:
             name = f"{r['owner']}/{r['repo']}"
+            # 擬似 owner（services.PSEUDO_OWNERS）のうち local はローカル samples を収集し、
+            # それ以外（手動登録 Skill の置き場）は GitHub に実在しないため同期しない。
+            if r["owner"] != services.LOCAL_OWNER and r["owner"] in services.PSEUDO_OWNERS:
+                st.write(f"{name} は手動登録 Skill の置き場のためスキップしました")
+                continue
             st.write(f"{name} を収集しています…")
             try:
-                if r["owner"] == "local":
+                if r["owner"] == services.LOCAL_OWNER:
                     services.collect_local(_SAMPLES_ROOT)
                 else:
                     services.collect_repo(str(r["id"]))
@@ -105,14 +110,9 @@ def _render_content() -> None:
     elif view == "search":
         search.render()
     elif view == "detail":
-        st.title("Skill 詳細")
-        st.info(f"詳細画面は準備中です（Issue #15）  ·  Skill ID: {st.session_state.selected_skill_id}")
-        if st.button("← ダッシュボードに戻る"):
-            st.session_state.current_view = "dashboard"
-            st.rerun()
+        detail.render()
     elif view == "suggestions":
-        st.title("改善の提案を確認する")
-        st.info("この画面は準備中です（Issue #15）")
+        suggestions.render()
     elif view == "repos":
         repos.render()
     else:
