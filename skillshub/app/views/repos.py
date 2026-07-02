@@ -91,7 +91,12 @@ def _render_repo_list() -> None:
                 st.caption(f"最終収集: {last_str}　｜　Skill: {skill_count} 件")
 
             with col_btn:
-                clicked = st.button("今すぐ収集", key=f"collect_{repo_id}", use_container_width=True)
+                # 擬似 owner（local samples / 手動登録の置き場）は GitHub に実在しないため
+                # 「今すぐ収集」を出さない（collect_repo が installation 取得の 404 で落ちる）。
+                if owner not in services.PSEUDO_OWNERS:
+                    clicked = st.button("今すぐ収集", key=f"collect_{repo_id}", use_container_width=True)
+                else:
+                    st.caption("GitHub 収集の対象外")
 
         if clicked:
             with st.spinner(f"{owner}/{repo} を収集中…"):

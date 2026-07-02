@@ -16,9 +16,6 @@ from skillshub.app.views.suggestions import render_suggestion_card
 from skillshub.shared import services
 from skillshub.shared.schemas import SkillDetail
 
-# collect_local が使う擬似 owner。GitHub 上に実体が無いためリンクを出さない。
-_LOCAL_OWNER = "local"
-
 
 def _back_to_dashboard() -> None:
     st.session_state.selected_skill_id = None
@@ -27,14 +24,17 @@ def _back_to_dashboard() -> None:
 
 
 def _source_file_url(detail: SkillDetail) -> str | None:
-    """取得元 SKILL.md への GitHub リンク。HEAD は既定ブランチに解決される（er.md）。"""
-    if detail.repo_owner == _LOCAL_OWNER:
+    """取得元 SKILL.md への GitHub リンク。HEAD は既定ブランチに解決される（er.md）。
+
+    擬似 owner（local samples / 手動登録の置き場）は GitHub 上に実体が無いためリンクを出さない。
+    """
+    if detail.repo_owner in services.PSEUDO_OWNERS:
         return None
     return f"https://github.com/{detail.repo_owner}/{detail.repo_name}/blob/HEAD/{detail.skill.source_path}"
 
 
 def _issues_url(detail: SkillDetail) -> str | None:
-    if detail.repo_owner == _LOCAL_OWNER:
+    if detail.repo_owner in services.PSEUDO_OWNERS:
         return None
     return f"https://github.com/{detail.repo_owner}/{detail.repo_name}/issues"
 
@@ -97,7 +97,7 @@ def _render_discussion(detail: SkillDetail) -> None:
     if issues_url:
         st.markdown(f"この Skill への要望・議論は、取得元リポジトリの [GitHub Issues]({issues_url}) へどうぞ。")
     else:
-        st.caption("ローカル収集の Skill のため、GitHub 上の議論の場はありません。")
+        st.caption("GitHub 上に取得元が無い Skill のため、議論の場はありません。")
 
 
 def render() -> None:

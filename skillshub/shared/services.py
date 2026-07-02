@@ -45,6 +45,13 @@ _session_scope = session_scope
 # 合成提案は候補が 2 件以上のときだけ Composer を起動する（仕様: 制御はサービス層に置く）。
 _MIN_CANDIDATES_FOR_COMPOSE = 2
 
+# GitHub 上に実在しない「擬似 owner」の規約。
+# LOCAL_OWNER はローカル samples 収集（collect_local）、MANUAL_OWNER は手動登録 Skill の
+# 置き場（seed.py）で、いずれも GitHub 収集・リンク生成の対象にしない。
+LOCAL_OWNER = "local"
+MANUAL_OWNER = "internal"
+PSEUDO_OWNERS = frozenset({LOCAL_OWNER, MANUAL_OWNER})
+
 
 # ── 検索（Searcher → Composer）──────────────────────────
 

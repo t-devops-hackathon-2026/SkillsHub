@@ -79,9 +79,14 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
     with st.status("エージェントが同期中…", expanded=True) as status:
         for r in repositories:
             name = f"{r['owner']}/{r['repo']}"
+            # 擬似 owner（services.PSEUDO_OWNERS）のうち local はローカル samples を収集し、
+            # それ以外（手動登録 Skill の置き場）は GitHub に実在しないため同期しない。
+            if r["owner"] != services.LOCAL_OWNER and r["owner"] in services.PSEUDO_OWNERS:
+                st.write(f"{name} は手動登録 Skill の置き場のためスキップしました")
+                continue
             st.write(f"{name} を収集しています…")
             try:
-                if r["owner"] == "local":
+                if r["owner"] == services.LOCAL_OWNER:
                     services.collect_local(_SAMPLES_ROOT)
                 else:
                     services.collect_repo(str(r["id"]))
