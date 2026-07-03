@@ -30,9 +30,12 @@ _MIN_CANDIDATES_FOR_COMPOSE = 2
 class ComposerWorkflow(BaseModel):
     """Composer（LLM）が出力するワークフロー本文（構造化出力のスキーマ兼 戻り値型）。
 
+    ``needed`` は「複数 Skill を組み合わせる価値があるか」の LLM 自身の判断。
+    単一 Skill で足りるクエリに無理やり合成を出さないためのフラグ（False なら提案しない）。
     対象 Skill の id は LLM に出させず、サービス側が候補から付与する（``ComposeSuggestion``）。
     """
 
+    needed: bool = True
     title: str
     body: str
 
@@ -51,11 +54,12 @@ def run_composer(
 ) -> ComposeSuggestion | None:
     """候補 Skill を組み合わせた合成提案を返す（決定論的本体）。
 
-    候補が 2 件未満なら合成しない（``None``）。LLM 呼び出しが失敗した場合も ``None`` を返し、
+    候補が 2 件未満なら合成しない（``None``）。「単一の Skill で足りる」と LLM が判断した
+    場合（``needed=False``）や、LLM 呼び出しが失敗した場合も ``None`` を返し、
     検索結果自体（候補リスト）は呼び出し側で必ず返せるようにする（graceful degradation）。
 
     Returns:
-        ``target_skill_ids`` に候補全件を持つ ``ComposeSuggestion``。生成不可なら ``None``。
+        ``target_skill_ids`` に候補全件を持つ ``ComposeSuggestion``。生成不可・合成不要なら ``None``。
     """
     if len(items) < _MIN_CANDIDATES_FOR_COMPOSE:
         return None
@@ -66,7 +70,7 @@ def run_composer(
     except Exception:  # noqa: BLE001 — LLM/GCP 失敗時は合成なしで検索結果を返す
         return None
 
-    if workflow is None:
+    if workflow is None or not workflow.needed:
         return None
 
     return ComposeSuggestion(
@@ -87,14 +91,23 @@ def _generate_compose(query: str, items: list[SearchResultItem], model: str) -> 
     prompt = (
         "あなたは社内 Skill を組み合わせてワークフローを設計するアシスタントです。\n"
         f"ユーザーのやりたいこと: 「{query}」\n\n"
-        "次の Skill 候補を組み合わせ、目的を達成するための手順（ワークフロー）を提案してください。\n"
+        "次の Skill 候補があります。\n"
         f"{listed}\n\n"
-        "title はワークフローの短い名前、body は組み合わせ方・実行順序・期待できる効果を説明する文章にしてください。"
+        "複数の Skill を順に使うことで、単一の Skill では実現できない価値が生まれる場合にだけ、"
+        "その手順（ワークフロー）を提案してください。\n"
+        "- 単一の Skill で目的を達成できる場合や、組み合わせが不自然な場合は"
+        " needed を false、title と body を空文字にしてください。\n"
+        "- 提案する場合は needed を true にし、title はワークフローの短い名前、"
+        "body はどの Skill をどの順で使い、何が得られるかを説明する文章にしてください。"
     )
     schema = {
         "type": "object",
-        "properties": {"title": {"type": "string"}, "body": {"type": "string"}},
-        "required": ["title", "body"],
+        "properties": {
+            "needed": {"type": "boolean"},
+            "title": {"type": "string"},
+            "body": {"type": "string"},
+        },
+        "required": ["needed", "title", "body"],
     }
     response = GenerativeModel(model).generate_content(
         prompt,
@@ -105,4 +118,4 @@ def _generate_compose(query: str, items: list[SearchResultItem], model: str) -> 
         ),
     )
     data = json.loads(response.text)
-    return ComposerWorkflow(title=str(data["title"]), body=str(data["body"]))
+    return ComposerWorkflow(needed=bool(data["needed"]), title=str(data["title"]), body=str(data["body"]))

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.orm import Session
 
 from skillshub.shared import models
@@ -556,3 +556,21 @@ def collect_local(
     repo_id = get_or_create_repository(owner, repo)
     run_result = _run_collection(repo_id, lambda: load_local_skills(root), embed_fn=embed_fn)
     return _collection_summary(repo_id, run_result)
+
+
+# ── デモ運用（ハッカソン用）──────────────────────────────
+
+
+def reset_demo_data() -> None:
+    """全データを削除し、初期シード（seed.py）を再投入する（ハッカソンのデモやり直し用）。
+
+    suggestions と repositories を消せば、残る skills / skill_embeddings /
+    suggestion_targets は DB の ON DELETE CASCADE で一緒に消える。削除と再シードは
+    同一トランザクションで行い、途中失敗時に空のままにならないようにする。
+    """
+    from skillshub.db.seed import seed_into  # アプリの通常経路から db パッケージに依存しないよう遅延 import
+
+    with _session_scope() as session:
+        session.execute(delete(models.Suggestion))
+        session.execute(delete(models.Repository))
+        seed_into(session)

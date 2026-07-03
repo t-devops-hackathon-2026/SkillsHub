@@ -53,6 +53,41 @@ def tag_chip(tag: str) -> str:
     )
 
 
+# GitHub Octicons（MIT License, https://github.com/primer/octicons）の 16px パスデータ。
+# 絵文字の代わりに使う公式アイコン。使う分だけインラインで持ち、外部アセットは取得しない。
+_OCTICON_PATHS: dict[str, str] = {
+    "repo": (
+        "M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 "
+        "0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 "
+        "1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 "
+        ".25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z"
+    ),
+    "light-bulb": (
+        "M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848."
+        "284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 "
+        "0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 "
+        "2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541."
+        "681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292."
+        "45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75Z"
+        "M5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5Zm.75 2.75a.75.75 0 0 1 .75-.75h1.5a.75."
+        "75 0 0 1 0 1.5h-1.5a.75.75 0 0 1-.75-.75Z"
+    ),
+    "check": (
+        "M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 "
+        ".018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"
+    ),
+}
+
+
+def octicon(name: str, size: int = 16, color: str = "currentColor") -> str:
+    """GitHub 公式アイコン（Octicons）のインライン SVG を返す（絵文字の代替）。"""
+    return (
+        f'<svg aria-hidden="true" viewBox="0 0 16 16" width="{size}" height="{size}" '
+        f'fill="{color}" style="vertical-align:text-bottom;flex:none;display:inline-block">'
+        f'<path d="{_OCTICON_PATHS[name]}"/></svg>'
+    )
+
+
 def navigate_to_detail(skill_id: str) -> None:
     st.session_state.selected_skill_id = skill_id
     st.session_state.current_view = "detail"
@@ -70,6 +105,7 @@ _GITHUB_STYLE = """
   --gh-line:#d1d9e0; --gh-line-soft:#eaeef2;
   --gh-accent:#0969da; --gh-accent-soft:#ddf4ff;
   --gh-success:#1f883d; --gh-success-h:#1a7f37;
+  --gh-danger:#cf222e; --gh-danger-h:#a40e26;
   --gh-btn:#f6f8fa; --gh-btn-h:#eef1f4; --gh-btn-bd:rgba(31,35,40,.15);
   --gh-ai:#8250df;
   --gh-grad:linear-gradient(135deg,#0969da 0%,#8250df 100%);
@@ -85,7 +121,8 @@ html, body, .stApp{
 }
 .stApp{background:var(--gh-bg)}
 [data-testid="stHeader"]{background:rgba(246,248,250,.88);backdrop-filter:blur(4px)}
-.block-container{max-width:1100px;padding-top:2.4rem;padding-bottom:4rem}
+/* 上 padding は固定ヘッダー（60px）に先頭要素が隠れない高さを確保する */
+.block-container{max-width:1100px;padding:4.4rem 1.5rem 4rem}
 #MainMenu, footer{visibility:hidden}
 h1,h2,h3{color:var(--gh-ink);font-weight:600;letter-spacing:0}
 hr{border-color:var(--gh-line-soft)}
@@ -216,6 +253,13 @@ div[class*="st-key-"][class*="_link_"] button{font-size:.95rem}
 [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]){
   background:var(--gh-accent-soft);border-color:#b6e3ff}
 
+/* チャット入力（画面下固定）はメインコンテンツと幅・背景を揃える
+   （既定ではコンテナ幅が block-container と一致せず、検索バーだけ間延びして見える） */
+[data-testid="stBottom"]{background:var(--gh-bg)}
+[data-testid="stBottom"]>div{background:transparent}
+[data-testid="stBottomBlockContainer"]{
+  max-width:1100px;padding-left:1.5rem;padding-right:1.5rem;background:transparent}
+
 /* ── ステータス・アラート ── */
 [data-testid="stExpander"]{background:var(--gh-card);border:1px solid var(--gh-line);border-radius:8px}
 [data-testid="stAlert"]{border-radius:8px}
@@ -249,6 +293,35 @@ div[class*="st-key-agent_bar_submit"] button:hover{
   text-align:center;width:100%}
 [data-testid="stSidebar"] div[class*="st-key-sync_all"] .stButton button>div{
   justify-content:center}
+
+/* ── 提案カードの対象 Skill：ラベル＋リンクを1行に流す（あふれたら折り返し）── */
+.stVerticalBlock[class*="st-key-"][class*="_targets"]{
+  flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:.1rem .75rem}
+.stVerticalBlock[class*="st-key-"][class*="_targets"]>[data-testid="stElementContainer"]{
+  width:auto;flex:0 0 auto}
+
+/* ── 表示切り替え（st.segmented_control）：Primer SegmentedControl 風 ── */
+[data-testid="stSegmentedControl"] button{
+  font-size:.85rem;font-weight:500;color:var(--gh-muted)}
+[data-testid="stSegmentedControl"] button:hover{color:var(--gh-ink)}
+[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"]{
+  background:var(--gh-accent-soft);color:var(--gh-accent);font-weight:600;border-color:transparent}
+
+/* サイドバーのデモリセット：Primer btn-danger 風。
+   トリガー（popover）は outline、popover 内の実行ボタンはベタ塗りにする。
+   popover の中身は overlay に描画されサイドバー外のため、実行ボタンは key だけで指す。 */
+[data-testid="stSidebar"] div[class*="st-key-demo_reset_area"] [data-testid="stPopover"] button{
+  width:100%;justify-content:center;border-radius:6px;
+  background:transparent;border:1px solid var(--gh-btn-bd);
+  color:var(--gh-danger);font-weight:600;font-size:.85rem}
+[data-testid="stSidebar"] div[class*="st-key-demo_reset_area"] [data-testid="stPopover"] button:hover{
+  background:var(--gh-danger);border-color:var(--gh-danger);color:#fff}
+[data-testid="stSidebar"] div[class*="st-key-demo_reset_area"] [data-testid="stPopover"] button p{
+  text-align:center;width:100%}
+div[class*="st-key-demo_reset_confirm"] button{
+  background:var(--gh-danger);border:1px solid rgba(31,35,40,.15);color:#fff;font-weight:600}
+div[class*="st-key-demo_reset_confirm"] button:hover{
+  background:var(--gh-danger-h);border-color:var(--gh-danger-h);color:#fff}
 
 /* ── レスポンシブ：640px 以下でカラムを縦積みに ── */
 @media (max-width:640px){

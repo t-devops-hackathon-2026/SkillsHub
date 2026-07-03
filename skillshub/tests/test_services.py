@@ -398,3 +398,24 @@ def test_dismiss_suggestion_is_noop_when_not_open(db_session: Session, monkeypat
 
     with pytest.raises(ValueError, match="提案が見つかりません"):
         services.dismiss_suggestion("00000000-0000-0000-0000-000000000000")
+
+
+# ── デモ運用（ハッカソン用リセット）─────────────────────────
+
+
+def test_reset_demo_data_restores_seed_state(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """収集済みデータ・提案をすべて消し、seed 直後（リポジトリ2件・手動 Skill 2件）に戻ることを検証する。"""
+    repo = Repository(owner="acme", repo="widgets")
+    db_session.add(repo)
+    db_session.flush()
+    skill = _add_skill(db_session, repo, "議事録要約", "skills/a/SKILL.md")
+    _add_suggestion(db_session, SuggestionType.MERGE, [skill])
+
+    monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
+
+    services.reset_demo_data()
+
+    repos = {(r.owner, r.repo) for r in db_session.scalars(select(Repository)).all()}
+    assert repos == {("internal", "manual-skills"), ("t-devops-hackathon-2026", "ai-agent")}
+    assert {s.name for s in db_session.scalars(select(Skill)).all()} == {"議事録要約 Skill", "タスク抽出 Skill"}
+    assert db_session.scalars(select(Suggestion)).all() == []

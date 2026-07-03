@@ -38,14 +38,14 @@ def _collect(repo_id: str, display_name: str, kind: str, owner: str) -> None:
                 if result.failed_repos:
                     _set_flash(
                         "warning",
-                        f"⚠️ `{owner}` の収集が一部失敗しました。"
+                        f"`{owner}` の収集が一部失敗しました。"
                         f"　取得: {result.collected_skills} 件　／　失敗: {', '.join(result.failed_repos)}",
                         go_dashboard=True,
                     )
                 else:
                     _set_flash(
                         "success",
-                        f"✅ `{owner}` Org の収集が完了しました。"
+                        f"`{owner}` Org の収集が完了しました。"
                         f"　取得: {result.collected_skills} 件　／　スキップ: {result.skipped_skills} 件",
                         go_dashboard=True,
                     )
@@ -55,11 +55,11 @@ def _collect(repo_id: str, display_name: str, kind: str, owner: str) -> None:
                 skipped = result_repo["skipped_skills"]
                 _set_flash(
                     "success",
-                    f"✅ `{display_name}` の収集が完了しました。　取得: {collected} 件　／　スキップ: {skipped} 件",
+                    f"`{display_name}` の収集が完了しました。　取得: {collected} 件　／　スキップ: {skipped} 件",
                     go_dashboard=True,
                 )
         except Exception as exc:
-            _set_flash("error", f"❌ `{display_name}` の収集に失敗しました。\n{exc}")
+            _set_flash("error", f"`{display_name}` の収集に失敗しました。\n{exc}")
     st.rerun()
 
 
@@ -96,9 +96,13 @@ def _kind(repo: str) -> str:
     return "org" if not repo else "repo"
 
 
-@st.cache_data(ttl=300, show_spinner="エージェントの閲覧範囲を取得中…")
+@st.cache_data(ttl=300, persist="disk", show_spinner="エージェントの閲覧範囲を取得中…")
 def _github_scope() -> dict[str, list[str]]:
-    """App の閲覧範囲（選択肢）。GitHub API を毎リロードで叩かないよう短時間キャッシュする。"""
+    """App の閲覧範囲（選択肢）。GitHub API を毎リロードで叩かないよう短時間キャッシュする。
+
+    ``persist="disk"`` でプロセス再起動をまたいで保持し、起動直後の初回表示が
+    数秒のスピナーでブロックされる（画面が段階的に組み上がって見える）のを避ける。
+    """
     return services.list_github_scope()
 
 
@@ -142,9 +146,24 @@ def _render_register_form() -> None:
                 label_visibility="collapsed",
             )
         else:
-            options = sorted(scope) if is_org else sorted(r for repos in scope.values() for r in repos)
+            # 登録済みの対象（Org / owner/repo、Org 登録済み owner の配下リポジトリ含む）は
+            # 候補から外す（登録自体は冪等だが、選択肢に出続けると二重登録に見える）。
+            registered = services.list_repositories()
+            registered_orgs = {str(r["owner"]) for r in registered if not str(r["repo"])}
+            registered_repos = {f"{r['owner']}/{r['repo']}" for r in registered if str(r["repo"])}
+            if is_org:
+                candidates = sorted(scope)
+                options = [o for o in candidates if o not in registered_orgs]
+            else:
+                candidates = sorted(r for repos in scope.values() for r in repos)
+                options = [
+                    r for r in candidates if r not in registered_repos and r.split("/", 1)[0] not in registered_orgs
+                ]
             if not options:
-                st.info("エージェントが閲覧できる対象がありません。GitHub App のインストール先を確認してください。")
+                if candidates:
+                    st.info("エージェントが閲覧できる対象は、すべて登録済みです。")
+                else:
+                    st.info("エージェントが閲覧できる対象がありません。GitHub App のインストール先を確認してください。")
                 return
             selected = st.selectbox(
                 "対象",
@@ -189,7 +208,7 @@ def _render_register_form() -> None:
             "kind": "org" if is_org else "repo",
             "owner": owner,
         }
-        _set_flash("success", f"✅ `{display_name}` を登録しました。")
+        _set_flash("success", f"`{display_name}` を登録しました。")
         st.rerun()
     except Exception as exc:
         st.error(f"登録に失敗しました: {exc}")
@@ -278,7 +297,6 @@ def render() -> None:
     _, main_col, _ = st.columns([0.5, 6, 0.5])
 
     with main_col:
-        st.subheader("📦 同期元")
         st.caption("Organization 単位または個別 owner/repo を登録。司書が定期的に SKILL.md を収集します。")
         st.write("")
 
