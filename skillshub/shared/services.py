@@ -7,8 +7,11 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -94,10 +97,94 @@ def collect_repo(repo_id: str, *, embed_fn: ai_tools.EmbeddingFn | None = None) 
         repo = session.get(models.Repository, repo_uuid)
         if repo is None:
             raise ValueError(f"リポジトリが見つかりません: {repo_id}")
+        if not repo.repo:
+            # repo="" は Organization の登録行（マーカー）。単一リポジトリとしては収集できない。
+            raise ValueError(f"{repo.owner} は Organization 登録のため collect_org で収集してください")
         target = f"{repo.owner}/{repo.repo}"
 
     run_result = _run_collection(repo_uuid, lambda: load_github_skills(target), embed_fn=embed_fn)
     return _collection_summary(repo_uuid, run_result)
+
+
+def github_app_configured() -> bool:
+    """GitHub App の認証情報が使える見込みかを環境変数で判定する（登録画面の出し分け用）。
+
+    ローカルは環境変数、本番は Secret Manager（``GOOGLE_CLOUD_PROJECT`` 必須）で解決される
+    （cf. ``github_tools._resolve_app_id``）。どちらかの経路が立っていれば True。
+    実際に認証が通るかまでは確認しない。
+    """
+    has_env_creds = bool(os.environ.get("GITHUB_APP_ID")) and bool(
+        os.environ.get("GITHUB_APP_PRIVATE_KEY") or os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH")
+    )
+    return has_env_creds or bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
+
+
+def list_github_scope() -> dict[str, list[str]]:
+    """GitHub App が閲覧できる範囲を ``{アカウント名: [owner/repo, ...]}`` で返す。
+
+    登録画面の選択肢に使う。App がインストールされた Org / ユーザーごとに、
+    アクセス可能な全リポジトリを列挙する。
+    """
+    from skillshub.shared.tools import github_tools
+
+    app_jwt = github_tools.generate_app_jwt()
+    scope: dict[str, list[str]] = {}
+    for installation_id, account in github_tools.list_app_installations(app_jwt):
+        token = github_tools.get_installation_token(app_jwt, installation_id)
+        scope[account] = sorted(
+            f"{repo_owner}/{repo_name}"
+            for repo_owner, repo_name, _default_branch in github_tools.list_installation_repositories(token)
+        )
+    return scope
+
+
+@dataclass(frozen=True)
+class OrgCollectResult:
+    """Organization 一括収集（``collect_org``）の集計結果。"""
+
+    owner: str
+    repo_ids: list[str] = field(default_factory=list)
+    collected_skills: int = 0
+    skipped_skills: int = 0
+    failed_repos: list[str] = field(default_factory=list)
+
+
+def collect_org(owner: str, *, embed_fn: ai_tools.EmbeddingFn | None = None) -> OrgCollectResult:
+    """Organization 配下の全アクセス可能リポジトリを収集し、集計を返す。
+
+    GitHub App のインストール配下を列挙して未登録リポジトリを自動登録し、1 リポジトリずつ
+    収集パイプラインを実行する（1 件の失敗で残りを止めない。失敗は結果とログで扱う）。
+    """
+    from skillshub.shared.sources.github import load_github_skills
+    from skillshub.shared.tools import github_tools
+
+    app_jwt = github_tools.generate_app_jwt()
+    installation_id = github_tools.get_installation_id_for_org(app_jwt, owner)
+    token = github_tools.get_installation_token(app_jwt, installation_id)
+
+    repo_ids: list[str] = []
+    failed_repos: list[str] = []
+    collected = 0
+    skipped = 0
+    for repo_owner, repo_name, _default_branch in github_tools.list_installation_repositories(token):
+        repo_uuid = get_or_create_repository(repo_owner, repo_name)
+        repo_ids.append(str(repo_uuid))
+        target = f"{repo_owner}/{repo_name}"
+        try:
+            run_result = _run_collection(repo_uuid, partial(load_github_skills, target), embed_fn=embed_fn)
+        except Exception:  # noqa: BLE001 — 1 リポジトリの失敗で Org 全体を止めない
+            failed_repos.append(target)
+            continue
+        collected += run_result.stats.collected
+        skipped += run_result.stats.skipped
+
+    return OrgCollectResult(
+        owner=owner,
+        repo_ids=repo_ids,
+        collected_skills=collected,
+        skipped_skills=skipped,
+        failed_repos=failed_repos,
+    )
 
 
 def _run_collection(

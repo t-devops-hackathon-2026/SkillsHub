@@ -100,6 +100,35 @@ def _resolve_github_targets(target: str) -> list[tuple[UUID, str, str]]:
     return result
 
 
+def _expand_db_targets(rows: list[tuple[UUID, str, str]]) -> tuple[list[tuple[UUID, str, str]], int]:
+    """DB 登録行を収集可能な対象へ整え、展開に失敗した Org の件数も返す。
+
+    Org 登録行（repo=""）はインストール配下の実リポジトリへ展開し、手動登録の置き場
+    （internal）は GitHub に実在しないためスキップする。展開で得た行と登録済み行の重複は除く。
+    """
+    expanded: list[tuple[UUID, str, str]] = []
+    seen: set[UUID] = set()
+    failed_orgs = 0
+    for rid, owner, repo in rows:
+        if owner == services.MANUAL_OWNER:
+            continue
+        if not repo:
+            try:
+                org_targets = _resolve_github_targets(owner)
+            except Exception as exc:  # noqa: BLE001 - 1 Org の失敗で他の対象を止めない
+                failed_orgs += 1
+                print(json.dumps({"repo": owner, "status": "error", "error": str(exc)}, ensure_ascii=False))
+                continue
+            for org_target in org_targets:
+                if org_target[0] not in seen:
+                    seen.add(org_target[0])
+                    expanded.append(org_target)
+        elif rid not in seen:
+            seen.add(rid)
+            expanded.append((rid, owner, repo))
+    return expanded, failed_orgs
+
+
 def main(
     repo_id: str | None = None,
     target: str | None = None,
@@ -115,18 +144,18 @@ def main(
 
     if target is not None:
         targets = _resolve_github_targets(target)
+        failed_repos = 0
     else:
         # DB 巡回モード: 引数なし（定期バッチ）でもローカル完走できるよう local/samples を用意する。
         if repo_uuid is None:
             services.get_or_create_repository(_LOCAL_OWNER, _LOCAL_REPO)
-        targets = _target_repos(repo_uuid)
+        targets, failed_repos = _expand_db_targets(_target_repos(repo_uuid))
 
-    if not targets:
+    if not targets and not failed_repos:
         msg = {"summary": "対象リポジトリがありません", "repo_id": repo_id, "target": target}
         print(json.dumps(msg, ensure_ascii=False))
         return 0
 
-    failed_repos = 0
     for rid, owner, repo_name in targets:
         log: dict[str, object] = {
             "repo": f"{owner}/{repo_name}",
