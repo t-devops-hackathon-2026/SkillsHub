@@ -5,7 +5,7 @@ import time
 
 import streamlit as st
 
-from skillshub.app.views.components import navigate_to_detail, update_status_badge
+from skillshub.app.views.components import navigate_to_detail, octicon, update_status_badge
 from skillshub.shared import services
 from skillshub.shared.schemas import (
     ComposeSuggestion,
@@ -13,11 +13,12 @@ from skillshub.shared.schemas import (
     SearchResultItem,
 )
 
-# エージェントの「途中表示」段階。デモ映え用に解析→横断検索→照合の3段で見せる。
+# エージェントの「途中表示」段階。デモ映え用に解析→横断検索→選定の3段で見せる。
+# 最後の段を表示したまま実際の検索（services.search_skills）が走る。
 _SEARCH_STEPS: tuple[str, ...] = (
     "要求を解析しています…",
-    "Skills を横断検索しています…",
-    "鮮度を照合しています…",
+    "社内の Skills を横断検索しています…",
+    "候補を選定しています…",
 )
 # 各段の待機時間（秒）。体験の見せ場なので少しだけ溜める。
 _STEP_DELAY: float = 0.6
@@ -47,7 +48,7 @@ def _accept_compose(compose: ComposeSuggestion, save_key: str) -> None:
     st.session_state.saved_compose_keys.add(save_key)
     st.session_state.accepted_compose_suggestion = compose
     st.session_state.current_view = "suggestions"
-    st.toast("合成提案を保存しました", icon="✅")
+    st.toast("合成提案を保存しました", icon=":material/check_circle:")
     st.rerun()
 
 
@@ -68,10 +69,10 @@ def _render_item_card(item: SearchResultItem, key_prefix: str) -> None:
         )
 
         st.caption(skill.description)
-        st.progress(item.confidence, text=f"確信度 {round(item.confidence * 100)}%")
         st.markdown(
             f'<div style="font-size:13px;color:#59636e;border-top:1px dashed #d0d7de;'
-            f'margin-top:8px;padding-top:7px">💡 推薦理由: {html.escape(item.reason)}</div>',
+            f'margin-top:8px;padding-top:7px">{octicon("light-bulb", size=14)} '
+            f"推薦理由: {html.escape(item.reason)}</div>",
             unsafe_allow_html=True,
         )
 
@@ -98,8 +99,7 @@ def _render_result(result: SearchResult, key_prefix: str) -> None:
         st.markdown("該当する Skills が見つかりませんでした。別の言い方や、目的を具体的に書いていただけますか。")
         return
 
-    top = round(items[0].confidence * 100)
-    st.markdown(f"**{len(items)} 件の Skills が見つかりました**　·　確信度 {top}%")
+    st.markdown(f"**{len(items)} 件の Skills が見つかりました**")
 
     for i, item in enumerate(items):
         _render_item_card(item, key_prefix=f"{key_prefix}_{i}")
@@ -125,20 +125,21 @@ def _run_search(query: str) -> None:
         st.markdown(query)
 
     with st.chat_message("assistant"):
-        with st.status("考えています…", expanded=True) as status:
+        # 実際の検索（数秒かかる）も status 内で実行し、結果が出るまでスピナーを
+        # 回し続ける（演出だけ先に終わり、結果が無言でぽんと出るのを防ぐ）。
+        with st.status("エージェントが Skills を探しています…", expanded=True) as status:
             for step in _SEARCH_STEPS:
                 st.write(step)
                 time.sleep(_STEP_DELAY)
+            result = services.search_skills(query)
             status.update(label="検索が完了しました", state="complete", expanded=False)
 
-        result = services.search_skills(query)
         st.session_state.chat_history.append({"role": "assistant", "query": query, "result": result})
         _render_result(result, key_prefix=f"hist_{len(st.session_state.chat_history) - 1}")
 
 
 def render() -> None:
-    st.title("スキルを探す")
-    st.caption("やりたいことを書くと、エージェントが社内のスキルから最適な候補を提案します。")
+    st.caption("やりたいことを書くと、エージェントが同期済みのスキルから最適な候補を提案します。")
     _seed_greeting()
     _render_history()
 

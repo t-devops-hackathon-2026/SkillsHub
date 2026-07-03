@@ -33,6 +33,15 @@ def _init_session_state() -> None:
             st.session_state[key] = value
 
 
+def _navigate(view: str) -> None:
+    """ナビの on_click。スクリプト再実行が始まる前に遷移先を確定させる。
+
+    ``if st.button(...): st.rerun()`` 方式は「1回目の再実行を途中で捨てて2回目で新画面」
+    という二重描画になり、遷移のたびに画面がちらつくため使わない。
+    """
+    st.session_state.current_view = view
+
+
 def _render_sidebar() -> None:
     nav_items = [
         ("dashboard", "スキル一覧"),
@@ -49,12 +58,19 @@ def _render_sidebar() -> None:
             btn_type: Literal["primary", "secondary"] = (
                 "primary" if st.session_state.current_view == key else "secondary"
             )
-            if st.button(label, key=f"nav_{key}", use_container_width=True, type=btn_type):
-                st.session_state.current_view = key
-                st.rerun()
+            st.button(
+                label,
+                key=f"nav_{key}",
+                use_container_width=True,
+                type=btn_type,
+                on_click=_navigate,
+                args=(key,),
+            )
 
         st.divider()
         _render_agent_panel()
+        st.divider()
+        _render_reset_panel()
 
 
 def _render_agent_panel() -> None:
@@ -119,7 +135,23 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
             state="error" if failed else "complete",
             expanded=failed > 0,
         )
-    st.toast(f"同期が完了しました（成功 {ok} / 失敗 {failed}）", icon="✅")
+    st.toast(f"同期が完了しました（成功 {ok} / 失敗 {failed}）", icon=":material/check_circle:")
+
+
+def _render_reset_panel() -> None:
+    """全データを seed 直後の状態に戻す危険操作（ハッカソンのデモやり直し用）。"""
+    with (
+        st.container(key="demo_reset_area"),
+        st.popover("初期状態に戻す（ハッカソン用）", use_container_width=True),
+    ):
+        st.markdown("登録リポジトリ・収集済み Skill・提案・検索履歴をすべて削除し、デモ用の初期データに戻します。")
+        st.caption("ハッカソンで同期の挙動を確認したい時に自由にお使いください。")
+        if st.button("リセットを実行", key="demo_reset_confirm", use_container_width=True):
+            services.reset_demo_data()
+            st.cache_data.clear()
+            st.session_state.clear()
+            st.toast("初期状態に戻しました")
+            st.rerun()
 
 
 def _render_content() -> None:
@@ -140,7 +172,7 @@ def _render_content() -> None:
         dashboard.render()
 
 
-st.set_page_config(page_title="SkillsHub", page_icon="📚", layout="wide")
+st.set_page_config(page_title="SkillsHub", page_icon=":material/local_library:", layout="wide")
 inject_github_style()
 _init_session_state()
 _render_sidebar()

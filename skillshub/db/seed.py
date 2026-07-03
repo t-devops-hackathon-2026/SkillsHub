@@ -41,36 +41,44 @@ def _get_or_create_skill(session: Session, *, repo_id: UUID, name: str, **fields
     return skill
 
 
+def seed_into(session: Session) -> None:
+    """与えられた session に初期データを投入する（commit は呼び出し側の責務）。
+
+    デモリセット（services.reset_demo_data）が全削除と同一トランザクションで
+    呼べるよう、session 管理を seed() から分離してある。
+    """
+    # 手動 Skill を載せるリポジトリ（手動登録の置き場）。
+    manual_repo = _get_or_create_repository(session, owner="internal", repo="manual-skills", install_id=None)
+    # 収集デモ用の空リポジトリ（Skill を持たない）。
+    _get_or_create_repository(session, owner="t-devops-hackathon-2026", repo="ai-agent", install_id=None)
+
+    _get_or_create_skill(
+        session,
+        repo_id=manual_repo.id,
+        name="議事録要約 Skill",
+        description="会議の議事録を自動で要約し、要点を箇条書きにする",
+        source_path="skills/meeting-summarizer/SKILL.md",
+        author="alice",
+        tags=["議事録", "要約", "会議"],
+        usage="会議の議事録テキストを入力すると、要点を3〜5行に要約します。",
+        update_status=UpdateStatus.CURRENT,
+    )
+    _get_or_create_skill(
+        session,
+        repo_id=manual_repo.id,
+        name="タスク抽出 Skill",
+        description="会議メモやチャットログからアクションアイテムを抽出する",
+        source_path="skills/task-extractor/SKILL.md",
+        author="bob",
+        tags=["タスク", "抽出", "会議"],
+        usage="テキストを入力すると、TODO / アクションアイテムをリストアップします。",
+        update_status=UpdateStatus.STALE,
+    )
+
+
 def seed() -> None:
     with Session(_get_engine()) as session:
-        # 手動 Skill を載せるリポジトリ（手動登録の置き場）。
-        manual_repo = _get_or_create_repository(session, owner="internal", repo="manual-skills", install_id=None)
-        # 収集デモ用の空リポジトリ（Skill を持たない）。
-        _get_or_create_repository(session, owner="t-devops-hackathon-2026", repo="ai-agent", install_id=None)
-
-        _get_or_create_skill(
-            session,
-            repo_id=manual_repo.id,
-            name="議事録要約 Skill",
-            description="会議の議事録を自動で要約し、要点を箇条書きにする",
-            source_path="skills/meeting-summarizer/SKILL.md",
-            author="alice",
-            tags=["議事録", "要約", "会議"],
-            usage="会議の議事録テキストを入力すると、要点を3〜5行に要約します。",
-            update_status=UpdateStatus.CURRENT,
-        )
-        _get_or_create_skill(
-            session,
-            repo_id=manual_repo.id,
-            name="タスク抽出 Skill",
-            description="会議メモやチャットログからアクションアイテムを抽出する",
-            source_path="skills/task-extractor/SKILL.md",
-            author="bob",
-            tags=["タスク", "抽出", "会議"],
-            usage="テキストを入力すると、TODO / アクションアイテムをリストアップします。",
-            update_status=UpdateStatus.STALE,
-        )
-
+        seed_into(session)
         session.commit()
     print("seed 完了: repositories=2, skills=2")
 

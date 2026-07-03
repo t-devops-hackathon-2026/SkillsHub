@@ -11,7 +11,7 @@ import re
 
 import streamlit as st
 
-from skillshub.app.views.components import navigate_to_detail, suggestion_type_badge
+from skillshub.app.views.components import navigate_to_detail, octicon, suggestion_type_badge
 from skillshub.shared import services
 from skillshub.shared.schemas import SuggestionStatus, SuggestionType, SuggestionView
 
@@ -23,9 +23,12 @@ def _accept(suggestion: SuggestionView) -> None:
         st.error("記録に失敗しました。時間をおいて再度お試しください。")
         return
     if suggestion.type is SuggestionType.UPDATE:
-        st.toast("対応することにしました。鮮度を「最新」に戻しました（SKILL.md への反映は手元で）", icon="✅")
+        st.toast(
+            "対応することにしました。鮮度を「最新」に戻しました（SKILL.md への反映は手元で）",
+            icon=":material/check_circle:",
+        )
     else:
-        st.toast("対応することにしました（SKILL.md への反映は手元で）", icon="✅")
+        st.toast("対応することにしました（SKILL.md への反映は手元で）", icon=":material/check_circle:")
     st.rerun()
 
 
@@ -87,14 +90,13 @@ def render_suggestion_card(suggestion: SuggestionView, key_prefix: str, *, show_
         st.caption(f"{suggestion.created_at:%Y-%m-%d %H:%M} の提案")
 
         if show_target_links and suggestion.targets:
-            cols = st.columns([1, 3, 3, 3])
-            with cols[0]:
+            # ラベルとリンクを1行に流す（container を CSS で横並びにする。cf. _targets）。
+            with st.container(key=f"{key_prefix}_targets"):
                 st.markdown(
-                    '<div style="font-size:13px;color:#59636e;padding-top:2px">対象:</div>',
+                    '<span style="font-size:13px;color:#59636e">対象:</span>',
                     unsafe_allow_html=True,
                 )
-            for i, target in enumerate(suggestion.targets):
-                with cols[1 + i % 3]:
+                for target in suggestion.targets:
                     if st.button(
                         target.skill_name,
                         key=f"{key_prefix}_link_{target.skill_id}",
@@ -120,7 +122,8 @@ def render_suggestion_card(suggestion: SuggestionView, key_prefix: str, *, show_
                     _dismiss(suggestion)
         elif suggestion.status is SuggestionStatus.ACCEPTED:
             st.markdown(
-                '<span style="color:#1a7f37;font-size:13px;font-weight:600">✓ 対応すると判断済み</span>',
+                f'<span style="color:#1a7f37;font-size:13px;font-weight:600">'
+                f"{octicon('check', size=14, color='#1a7f37')} 対応すると判断済み</span>",
                 unsafe_allow_html=True,
             )
         else:
@@ -139,7 +142,6 @@ def _load_resolved() -> list[SuggestionView]:
 
 
 def render() -> None:
-    st.title("提案を確認する")
     st.caption("エージェントが見つけた重複の統合・内容の更新・ワークフロー合成の提案に、対応するかどうかを決めます。")
 
     # 検索画面で合成提案を採用した直後の遷移なら、保存されたことを一度だけ知らせる。
@@ -148,25 +150,31 @@ def render() -> None:
         st.session_state.accepted_compose_suggestion = None
         st.success(f"合成提案「{accepted_compose.title}」を保存しました。下の一覧から確認できます。")
 
-    mode = st.radio(
+    # 件数は切り替えボタン側に出すので、両ステータスを先に読む（提案は数十件想定）。
+    open_suggestions = services.list_suggestions()
+    resolved = _load_resolved()
+    counts = {"未対応": len(open_suggestions), "処理済み": len(resolved)}
+
+    mode = st.segmented_control(
         "表示する提案",
-        options=["未対応", "処理済み"],
-        horizontal=True,
+        options=list(counts),
+        format_func=lambda m: f"{m} {counts[m]}",
+        default="未対応",
         label_visibility="collapsed",
         key="suggestions_mode",
     )
 
     if mode == "処理済み":
-        suggestions = _load_resolved()
+        suggestions = resolved
         empty_message = "処理済みの提案はまだありません。"
     else:
-        suggestions = services.list_suggestions()
+        # 選択解除（None）は未対応の表示にフォールバックする。
+        suggestions = open_suggestions
         empty_message = "未対応の提案はありません。"
 
     if not suggestions:
         st.info(empty_message)
         return
 
-    st.caption(f"{len(suggestions)} 件")
     for suggestion in suggestions:
         render_suggestion_card(suggestion, key_prefix=f"sugg_{suggestion.id}")

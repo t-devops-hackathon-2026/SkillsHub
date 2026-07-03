@@ -58,6 +58,18 @@ def test_run_composer_returns_none_for_single_candidate() -> None:
     assert result is None
 
 
+def test_run_composer_returns_none_when_llm_judges_not_needed() -> None:
+    """単一 Skill で足りると LLM が判断した場合（needed=False）は合成提案を出さない。"""
+    items = [_item("議事録要約"), _item("タスク抽出")]
+
+    result = run_composer(
+        "議事録を要約したい",
+        items,
+        generate_fn=lambda q, c, m: ComposerWorkflow(needed=False, title="", body=""),
+    )
+    assert result is None
+
+
 def test_run_composer_returns_none_on_generate_error() -> None:
     items = [_item("a"), _item("b")]
 
