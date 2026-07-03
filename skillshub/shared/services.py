@@ -7,8 +7,11 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -27,8 +30,11 @@ from skillshub.shared.schemas import (
     RawSkill,
     SearchResult,
     Skill,
+    SkillDetail,
     SuggestionStatus,
+    SuggestionTargetRef,
     SuggestionType,
+    SuggestionView,
     UpdateStatus,
 )
 from skillshub.shared.tools import ai_tools
@@ -41,6 +47,13 @@ _session_scope = session_scope
 
 # 合成提案は候補が 2 件以上のときだけ Composer を起動する（仕様: 制御はサービス層に置く）。
 _MIN_CANDIDATES_FOR_COMPOSE = 2
+
+# GitHub 上に実在しない「擬似 owner」の規約。
+# LOCAL_OWNER はローカル samples 収集（collect_local）、MANUAL_OWNER は手動登録 Skill の
+# 置き場（seed.py）で、いずれも GitHub 収集・リンク生成の対象にしない。
+LOCAL_OWNER = "local"
+MANUAL_OWNER = "internal"
+PSEUDO_OWNERS = frozenset({LOCAL_OWNER, MANUAL_OWNER})
 
 
 # ── 検索（Searcher → Composer）──────────────────────────
@@ -84,10 +97,94 @@ def collect_repo(repo_id: str, *, embed_fn: ai_tools.EmbeddingFn | None = None) 
         repo = session.get(models.Repository, repo_uuid)
         if repo is None:
             raise ValueError(f"リポジトリが見つかりません: {repo_id}")
+        if not repo.repo:
+            # repo="" は Organization の登録行（マーカー）。単一リポジトリとしては収集できない。
+            raise ValueError(f"{repo.owner} は Organization 登録のため collect_org で収集してください")
         target = f"{repo.owner}/{repo.repo}"
 
     run_result = _run_collection(repo_uuid, lambda: load_github_skills(target), embed_fn=embed_fn)
     return _collection_summary(repo_uuid, run_result)
+
+
+def github_app_configured() -> bool:
+    """GitHub App の認証情報が使える見込みかを環境変数で判定する（登録画面の出し分け用）。
+
+    ローカルは環境変数、本番は Secret Manager（``GOOGLE_CLOUD_PROJECT`` 必須）で解決される
+    （cf. ``github_tools._resolve_app_id``）。どちらかの経路が立っていれば True。
+    実際に認証が通るかまでは確認しない。
+    """
+    has_env_creds = bool(os.environ.get("GITHUB_APP_ID")) and bool(
+        os.environ.get("GITHUB_APP_PRIVATE_KEY") or os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH")
+    )
+    return has_env_creds or bool(os.environ.get("GOOGLE_CLOUD_PROJECT"))
+
+
+def list_github_scope() -> dict[str, list[str]]:
+    """GitHub App が閲覧できる範囲を ``{アカウント名: [owner/repo, ...]}`` で返す。
+
+    登録画面の選択肢に使う。App がインストールされた Org / ユーザーごとに、
+    アクセス可能な全リポジトリを列挙する。
+    """
+    from skillshub.shared.tools import github_tools
+
+    app_jwt = github_tools.generate_app_jwt()
+    scope: dict[str, list[str]] = {}
+    for installation_id, account in github_tools.list_app_installations(app_jwt):
+        token = github_tools.get_installation_token(app_jwt, installation_id)
+        scope[account] = sorted(
+            f"{repo_owner}/{repo_name}"
+            for repo_owner, repo_name, _default_branch in github_tools.list_installation_repositories(token)
+        )
+    return scope
+
+
+@dataclass(frozen=True)
+class OrgCollectResult:
+    """Organization 一括収集（``collect_org``）の集計結果。"""
+
+    owner: str
+    repo_ids: list[str] = field(default_factory=list)
+    collected_skills: int = 0
+    skipped_skills: int = 0
+    failed_repos: list[str] = field(default_factory=list)
+
+
+def collect_org(owner: str, *, embed_fn: ai_tools.EmbeddingFn | None = None) -> OrgCollectResult:
+    """Organization 配下の全アクセス可能リポジトリを収集し、集計を返す。
+
+    GitHub App のインストール配下を列挙して未登録リポジトリを自動登録し、1 リポジトリずつ
+    収集パイプラインを実行する（1 件の失敗で残りを止めない。失敗は結果とログで扱う）。
+    """
+    from skillshub.shared.sources.github import load_github_skills
+    from skillshub.shared.tools import github_tools
+
+    app_jwt = github_tools.generate_app_jwt()
+    installation_id = github_tools.get_installation_id_for_org(app_jwt, owner)
+    token = github_tools.get_installation_token(app_jwt, installation_id)
+
+    repo_ids: list[str] = []
+    failed_repos: list[str] = []
+    collected = 0
+    skipped = 0
+    for repo_owner, repo_name, _default_branch in github_tools.list_installation_repositories(token):
+        repo_uuid = get_or_create_repository(repo_owner, repo_name)
+        repo_ids.append(str(repo_uuid))
+        target = f"{repo_owner}/{repo_name}"
+        try:
+            run_result = _run_collection(repo_uuid, partial(load_github_skills, target), embed_fn=embed_fn)
+        except Exception:  # noqa: BLE001 — 1 リポジトリの失敗で Org 全体を止めない
+            failed_repos.append(target)
+            continue
+        collected += run_result.stats.collected
+        skipped += run_result.stats.skipped
+
+    return OrgCollectResult(
+        owner=owner,
+        repo_ids=repo_ids,
+        collected_skills=collected,
+        skipped_skills=skipped,
+        failed_repos=failed_repos,
+    )
 
 
 def _run_collection(
@@ -218,6 +315,102 @@ def list_skills(
     if tags:
         result = [s for s in result if any(t in s.tags for t in tags)]
     return result
+
+
+# ── Skill 詳細・提案レビュー ───────────────────────────────
+
+
+def _to_suggestion_view(session: Session, suggestion: models.Suggestion) -> SuggestionView:
+    """Suggestion 行を、対象 Skill 名込みのビューへ変換する。
+
+    提案は多くても数十件の想定なので、targets は提案ごとに引く（JOIN の作り込みはしない）。
+    """
+    target_rows = session.execute(
+        select(models.SuggestionTarget.skill_id, models.Skill.name)
+        .join(models.Skill, models.Skill.id == models.SuggestionTarget.skill_id)
+        .where(models.SuggestionTarget.suggestion_id == suggestion.id)
+        .order_by(models.Skill.name)
+    ).all()
+    return SuggestionView(
+        id=suggestion.id,
+        type=SuggestionType(suggestion.type),
+        content=suggestion.content,
+        status=SuggestionStatus(suggestion.status),
+        created_at=suggestion.created_at,
+        targets=[SuggestionTargetRef(skill_id=skill_id, skill_name=name) for skill_id, name in target_rows],
+    )
+
+
+def get_skill(skill_id: str) -> SkillDetail | None:
+    """Skill 詳細画面用に、Skill 本体・取得元リポジトリ・open な提案をまとめて返す。
+
+    見つからなければ ``None``（DB 初期化後に古い id で遷移してきたケースを画面側で拾う）。
+    """
+    with _session_scope() as session:
+        skill = session.get(models.Skill, UUID(skill_id))
+        if skill is None:
+            return None
+        suggestions = session.scalars(
+            select(models.Suggestion)
+            .join(models.SuggestionTarget, models.SuggestionTarget.suggestion_id == models.Suggestion.id)
+            .where(
+                models.SuggestionTarget.skill_id == skill.id,
+                models.Suggestion.status == SuggestionStatus.OPEN,
+            )
+            .order_by(models.Suggestion.created_at.desc())
+        ).all()
+        return SkillDetail(
+            skill=Skill.model_validate(skill),
+            repo_owner=skill.repository.owner,
+            repo_name=skill.repository.repo,
+            open_suggestions=[_to_suggestion_view(session, s) for s in suggestions],
+        )
+
+
+def list_suggestions(status: SuggestionStatus = SuggestionStatus.OPEN) -> list[SuggestionView]:
+    """指定ステータスの提案を新しい順に返す（提案レビュー画面用）。"""
+    with _session_scope() as session:
+        suggestions = session.scalars(
+            select(models.Suggestion)
+            .where(models.Suggestion.status == status)
+            .order_by(models.Suggestion.created_at.desc())
+        ).all()
+        return [_to_suggestion_view(session, s) for s in suggestions]
+
+
+def accept_suggestion(suggestion_id: str) -> None:
+    """提案を採用（status→accepted）する。
+
+    仕様（step1.md「提案の採用時挙動」）:
+    - merge / compose: status 更新のみ（GitHub への反映は作者が手元で行う）。
+    - update: content の diff を適用済みドラフトとして残し、対象 Skill の
+      ``update_status`` を ``current`` に戻す。
+
+    open でない提案には何もしない（再描画中の二度押しをエラーにしない）。
+    """
+    with _session_scope() as session:
+        suggestion = session.get(models.Suggestion, UUID(suggestion_id))
+        if suggestion is None:
+            raise ValueError(f"提案が見つかりません: {suggestion_id}")
+        if suggestion.status != SuggestionStatus.OPEN:
+            return
+        suggestion.status = SuggestionStatus.ACCEPTED
+        if suggestion.type == SuggestionType.UPDATE:
+            for target in suggestion.targets:
+                skill = session.get(models.Skill, target.skill_id)
+                if skill is not None:
+                    skill.update_status = UpdateStatus.CURRENT.value
+
+
+def dismiss_suggestion(suggestion_id: str) -> None:
+    """提案を却下（status→dismissed）する。open でない提案には何もしない。"""
+    with _session_scope() as session:
+        suggestion = session.get(models.Suggestion, UUID(suggestion_id))
+        if suggestion is None:
+            raise ValueError(f"提案が見つかりません: {suggestion_id}")
+        if suggestion.status != SuggestionStatus.OPEN:
+            return
+        suggestion.status = SuggestionStatus.DISMISSED
 
 
 # ── 収集パイプラインの永続化（書き込み）────────────────────

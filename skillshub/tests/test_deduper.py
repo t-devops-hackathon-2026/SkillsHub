@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from skillshub.shared.agents.deduper import run_deduper_for_skill
 from skillshub.shared.models import Repository, Skill, Suggestion, SuggestionTarget
-from skillshub.shared.schemas import SuggestionType
+from skillshub.shared.schemas import SuggestionStatus, SuggestionType
 from skillshub.shared.tools import ai_tools
 
 # ── 純ロジック（DB 不要）──────────────────────────────────
@@ -161,4 +161,38 @@ def test_idempotent_no_duplicate_suggestion(db_session: Session, fake_embed_fn: 
 
     assert len(first) == 1
     assert second == []
+    assert _count_merge_suggestions(db_session) == 1
+
+
+def test_resolved_pair_not_suggested_again(db_session: Session, fake_embed_fn: Callable[[str], list[float]]) -> None:
+    """一度人間が判断（対応しない=dismissed）したペアは、再収集でも同じ提案を作り直さない。"""
+    repo = _make_repo(db_session)
+    skill_a = _make_skill(
+        db_session,
+        repo,
+        name="議事録要約 Skill",
+        description="会議の議事録を自動で要約し、要点を箇条書きにする",
+        source_path="skills/a/SKILL.md",
+    )
+    skill_b = _make_skill(
+        db_session,
+        repo,
+        name="議事録要約 Skill",
+        description="会議の議事録を自動で要約し、要点を箇条書きにする",
+        source_path="skills/b/SKILL.md",
+    )
+
+    run_deduper_for_skill(db_session, skill_a, embed_fn=fake_embed_fn)
+    created = run_deduper_for_skill(db_session, skill_b, embed_fn=fake_embed_fn)
+    assert len(created) == 1
+
+    # 「対応しない」と判断した状態を作る。
+    suggestion = db_session.get(Suggestion, created[0])
+    assert suggestion is not None
+    suggestion.status = SuggestionStatus.DISMISSED
+    db_session.flush()
+
+    # 再収集相当: 類似ペアのままでも提案は復活しない。
+    again = run_deduper_for_skill(db_session, skill_b, embed_fn=fake_embed_fn)
+    assert again == []
     assert _count_merge_suggestions(db_session) == 1

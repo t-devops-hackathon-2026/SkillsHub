@@ -1,4 +1,4 @@
-"""サービス層（get_summary / collect_repo）のテスト。
+"""サービス層（get_summary / collect_repo / Skill 詳細・提案レビュー）のテスト。
 
 ``_session_scope`` を db_session に差し替えて、実 DB（ローカル pgvector）に対する集計・
 永続化を検証する（DATABASE_URL 未設定時は db_session fixture が自動スキップ）。
@@ -92,6 +92,112 @@ def test_collect_repo_runs_full_pipeline(db_session: Session, monkeypatch: pytes
     assert captured["repo_id"] == repo.id
 
 
+def test_collect_repo_rejects_org_marker(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Org 登録行（repo=""）を collect_repo に渡すと明確なエラーになることを検証する。"""
+    marker = Repository(owner="acme", repo="")
+    db_session.add(marker)
+    db_session.flush()
+
+    monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
+
+    with pytest.raises(ValueError, match="collect_org"):
+        services.collect_repo(str(marker.id))
+
+
+def test_collect_org_collects_installation_repos(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """collect_org がインストール配下を自動登録して収集し、1 件の失敗で全体を止めないことを検証する。"""
+    from uuid import UUID
+
+    from skillshub.shared.tools import github_tools
+
+    monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
+    monkeypatch.setattr(github_tools, "generate_app_jwt", lambda: "jwt")
+    monkeypatch.setattr(github_tools, "get_installation_id_for_org", lambda app_jwt, org: 1)
+    monkeypatch.setattr(github_tools, "get_installation_token", lambda app_jwt, installation_id: "token")
+    monkeypatch.setattr(
+        github_tools,
+        "list_installation_repositories",
+        lambda token: [("acme", "a", "main"), ("acme", "b", "main")],
+    )
+
+    created: list[str] = []
+
+    def fake_get_or_create(owner: str, repo: str) -> UUID:
+        created.append(f"{owner}/{repo}")
+        repository = Repository(owner=owner, repo=repo)
+        db_session.add(repository)
+        db_session.flush()
+        return repository.id
+
+    monkeypatch.setattr(services, "get_or_create_repository", fake_get_or_create)
+
+    def fake_run_librarian(
+        repo_id: UUID,
+        load_raw_skills: object,
+        load_existing_hashes: object,
+        *,
+        embed_fn: object = None,
+    ) -> LibrarianRunResult:
+        repo = db_session.get(Repository, repo_id)
+        assert repo is not None
+        if repo.repo == "b":  # 2 件目は失敗させ、残りが継続されることを確認する
+            raise RuntimeError("boom")
+        return LibrarianRunResult(stats=LibrarianStats(collected=2, skipped=1))
+
+    monkeypatch.setattr(librarian_module, "run_librarian_for_repo", fake_run_librarian)
+
+    result = services.collect_org("acme")
+
+    assert created == ["acme/a", "acme/b"]
+    assert len(result.repo_ids) == 2
+    assert result.collected_skills == 2
+    assert result.skipped_skills == 1
+    assert result.failed_repos == ["acme/b"]
+
+
+def test_github_app_configured_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """環境変数（ローカル）か GOOGLE_CLOUD_PROJECT（Secret Manager 経路）があれば True。"""
+    for name in ("GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_PRIVATE_KEY_PATH", "GOOGLE_CLOUD_PROJECT"):
+        monkeypatch.delenv(name, raising=False)
+    assert services.github_app_configured() is False
+
+    monkeypatch.setenv("GITHUB_APP_ID", "123")
+    assert services.github_app_configured() is False  # 鍵がなければ不可
+
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "pem")
+    assert services.github_app_configured() is True
+
+    monkeypatch.delenv("GITHUB_APP_ID")
+    monkeypatch.delenv("GITHUB_APP_PRIVATE_KEY")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "proj")
+    assert services.github_app_configured() is True
+
+
+def test_list_github_scope_maps_installations_to_repos(monkeypatch: pytest.MonkeyPatch) -> None:
+    """インストールごとにアクセス可能リポジトリを owner/repo 形式で列挙することを検証する。"""
+    from skillshub.shared.tools import github_tools
+
+    monkeypatch.setattr(github_tools, "generate_app_jwt", lambda: "jwt")
+    monkeypatch.setattr(
+        github_tools,
+        "list_app_installations",
+        lambda app_jwt: [(1, "acme"), (2, "yuki")],
+    )
+    monkeypatch.setattr(github_tools, "get_installation_token", lambda app_jwt, installation_id: f"t{installation_id}")
+
+    def fake_list_repos(token: str) -> list[tuple[str, str, str]]:
+        return {
+            "t1": [("acme", "b", "main"), ("acme", "a", "main")],
+            "t2": [("yuki", "dotfiles", "main")],
+        }[token]
+
+    monkeypatch.setattr(github_tools, "list_installation_repositories", fake_list_repos)
+
+    scope = services.list_github_scope()
+
+    assert scope == {"acme": ["acme/a", "acme/b"], "yuki": ["yuki/dotfiles"]}
+
+
 def test_search_skills_end_to_end(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
@@ -164,3 +270,131 @@ def test_register_compose_suggestion_persists(db_session: Session, monkeypatch: 
         ).all()
     )
     assert targets == {s1.id, s2.id}
+
+
+# ── Skill 詳細・提案レビュー（#20）──────────────────────────
+
+
+def _add_skill(
+    db_session: Session,
+    repo: Repository,
+    name: str,
+    path: str,
+    status: UpdateStatus = UpdateStatus.CURRENT,
+) -> Skill:
+    skill = Skill(repo_id=repo.id, name=name, description="d", source_path=path, update_status=status)
+    db_session.add(skill)
+    db_session.flush()
+    return skill
+
+
+def _add_suggestion(
+    db_session: Session,
+    type_: SuggestionType,
+    targets: list[Skill],
+    status: SuggestionStatus = SuggestionStatus.OPEN,
+    content: str = "内容",
+) -> Suggestion:
+    suggestion = Suggestion(type=type_, content=content, status=status)
+    db_session.add(suggestion)
+    db_session.flush()
+    db_session.add_all([SuggestionTarget(suggestion_id=suggestion.id, skill_id=s.id) for s in targets])
+    db_session.flush()
+    return suggestion
+
+
+def test_get_skill_returns_detail_with_open_suggestions(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = Repository(owner="o", repo="r")
+    db_session.add(repo)
+    db_session.flush()
+    skill = _add_skill(db_session, repo, "議事録要約", "skills/a/SKILL.md", UpdateStatus.NEEDS_UPDATE)
+    other = _add_skill(db_session, repo, "タスク抽出", "skills/b/SKILL.md")
+    open_sugg = _add_suggestion(db_session, SuggestionType.UPDATE, [skill], content="--- diff ---")
+    # dismissed 済み・他 Skill 向けの提案は open_suggestions に含まれない。
+    _add_suggestion(db_session, SuggestionType.MERGE, [skill], status=SuggestionStatus.DISMISSED)
+    _add_suggestion(db_session, SuggestionType.UPDATE, [other])
+
+    monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
+
+    detail = services.get_skill(str(skill.id))
+    assert detail is not None
+    assert detail.skill.name == "議事録要約"
+    assert detail.repo_owner == "o"
+    assert detail.repo_name == "r"
+    assert [s.id for s in detail.open_suggestions] == [open_sugg.id]
+    assert detail.open_suggestions[0].targets[0].skill_name == "議事録要約"
+
+
+def test_get_skill_returns_none_for_missing_id(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
+    assert services.get_skill("00000000-0000-0000-0000-000000000000") is None
+
+
+def test_list_suggestions_returns_open_with_targets(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = Repository(owner="o", repo="r")
+    db_session.add(repo)
+    db_session.flush()
+    s1 = _add_skill(db_session, repo, "議事録要約", "skills/a/SKILL.md")
+    s2 = _add_skill(db_session, repo, "タスク抽出", "skills/b/SKILL.md")
+    merge = _add_suggestion(db_session, SuggestionType.MERGE, [s1, s2])
+    _add_suggestion(db_session, SuggestionType.UPDATE, [s1], status=SuggestionStatus.ACCEPTED)
+
+    monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
+
+    views = services.list_suggestions()
+    assert [v.id for v in views] == [merge.id]
+    assert {t.skill_name for t in views[0].targets} == {"議事録要約", "タスク抽出"}
+
+
+def test_accept_update_suggestion_resets_update_status(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = Repository(owner="o", repo="r")
+    db_session.add(repo)
+    db_session.flush()
+    skill = _add_skill(db_session, repo, "議事録要約", "skills/a/SKILL.md", UpdateStatus.NEEDS_UPDATE)
+    suggestion = _add_suggestion(db_session, SuggestionType.UPDATE, [skill], content="--- diff ---")
+
+    monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
+
+    services.accept_suggestion(str(suggestion.id))
+
+    assert suggestion.status == SuggestionStatus.ACCEPTED
+    assert skill.update_status == UpdateStatus.CURRENT
+
+
+def test_accept_merge_suggestion_keeps_skill_status(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = Repository(owner="o", repo="r")
+    db_session.add(repo)
+    db_session.flush()
+    s1 = _add_skill(db_session, repo, "議事録要約", "skills/a/SKILL.md", UpdateStatus.STALE)
+    s2 = _add_skill(db_session, repo, "タスク抽出", "skills/b/SKILL.md", UpdateStatus.STALE)
+    suggestion = _add_suggestion(db_session, SuggestionType.MERGE, [s1, s2])
+
+    monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
+
+    services.accept_suggestion(str(suggestion.id))
+
+    assert suggestion.status == SuggestionStatus.ACCEPTED
+    # merge は記録のみ（GitHub への反映は作者が手元で行う）。Skill の状態は変えない。
+    assert s1.update_status == UpdateStatus.STALE
+    assert s2.update_status == UpdateStatus.STALE
+
+
+def test_dismiss_suggestion_is_noop_when_not_open(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = Repository(owner="o", repo="r")
+    db_session.add(repo)
+    db_session.flush()
+    skill = _add_skill(db_session, repo, "議事録要約", "skills/a/SKILL.md", UpdateStatus.NEEDS_UPDATE)
+    suggestion = _add_suggestion(db_session, SuggestionType.UPDATE, [skill])
+
+    monkeypatch.setattr(services, "_session_scope", lambda: _scope_yielding(db_session))
+
+    services.dismiss_suggestion(str(suggestion.id))
+    assert suggestion.status == SuggestionStatus.DISMISSED
+
+    # 却下済みの提案を再度採用しても（再描画中の二度押し相当）何も変わらない。
+    services.accept_suggestion(str(suggestion.id))
+    assert suggestion.status == SuggestionStatus.DISMISSED
+    assert skill.update_status == UpdateStatus.NEEDS_UPDATE
+
+    with pytest.raises(ValueError, match="提案が見つかりません"):
+        services.dismiss_suggestion("00000000-0000-0000-0000-000000000000")

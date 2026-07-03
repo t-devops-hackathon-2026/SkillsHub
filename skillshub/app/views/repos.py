@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import streamlit as st
 
 from skillshub.shared import services
 
-_MSG_KEY          = "repos_flash_message"
-_GO_DASH_KEY      = "repos_go_dashboard"
-_PENDING_COLLECT  = "repos_pending_collect"   # 登録直後の「今すぐ収集」待ち
+_MSG_KEY = "repos_flash_message"
+_GO_DASH_KEY = "repos_go_dashboard"
+_PENDING_COLLECT = "repos_pending_collect"  # 登録直後の「今すぐ収集」待ち
 
 _KIND_ORG_BADGE = (
     '<span style="background:#fbefff;color:#8250df;font-size:11px;font-weight:600;'
@@ -17,8 +19,8 @@ _KIND_REPO_BADGE = (
     'padding:2px 8px;border-radius:2em;white-space:nowrap">repo</span>'
 )
 
-_COL_WIDTHS  = [3, 1, 1.5, 2, 0.8, 1.5, 1.2]
-_COL_HEADERS = ["対象", "種別", "ブランチ", "最終収集", "Skills", "状態", ""]
+_COL_WIDTHS = [3.5, 1, 2, 0.8, 1.5, 1.2]
+_COL_HEADERS = ["対象", "種別", "最終収集", "Skills", "状態", ""]
 
 
 def _set_flash(level: str, text: str, go_dashboard: bool = False) -> None:
@@ -32,20 +34,28 @@ def _collect(repo_id: str, display_name: str, kind: str, owner: str) -> None:
     with st.spinner(f"{display_name} を収集中…"):
         try:
             if kind == "org":
-                from skillshub.batch.run_collect import main as batch_main
-
-                exit_code = batch_main(target=owner)
-                if exit_code != 0:
-                    raise RuntimeError("一部のリポジトリの収集に失敗しました。")
-                _set_flash("success", f"✅ `{owner}` Org の収集が完了しました。", go_dashboard=True)
+                result = services.collect_org(owner)
+                if result.failed_repos:
+                    _set_flash(
+                        "warning",
+                        f"⚠️ `{owner}` の収集が一部失敗しました。"
+                        f"　取得: {result.collected_skills} 件　／　失敗: {', '.join(result.failed_repos)}",
+                        go_dashboard=True,
+                    )
+                else:
+                    _set_flash(
+                        "success",
+                        f"✅ `{owner}` Org の収集が完了しました。"
+                        f"　取得: {result.collected_skills} 件　／　スキップ: {result.skipped_skills} 件",
+                        go_dashboard=True,
+                    )
             else:
-                result    = services.collect_repo(repo_id)
-                collected = result["collected_skills"]
-                skipped   = result["skipped_skills"]
+                result_repo = services.collect_repo(repo_id)
+                collected = result_repo["collected_skills"]
+                skipped = result_repo["skipped_skills"]
                 _set_flash(
                     "success",
-                    f"✅ `{display_name}` の収集が完了しました。"
-                    f"　取得: {collected} 件　／　スキップ: {skipped} 件",
+                    f"✅ `{display_name}` の収集が完了しました。　取得: {collected} 件　／　スキップ: {skipped} 件",
                     go_dashboard=True,
                 )
         except Exception as exc:
@@ -76,19 +86,42 @@ def _render_flash() -> None:
             st.rerun()
 
     # 収集完了後: 「ダッシュボードで確認」ボタンをクリックされるまで表示し続ける
-    if st.session_state.get(_GO_DASH_KEY):
-        if st.button("ダッシュボードで確認 →", type="primary", key="go_dash_btn"):
-            st.session_state.pop(_GO_DASH_KEY, None)
-            st.session_state.current_view = "dashboard"
-            st.rerun()
+    if st.session_state.get(_GO_DASH_KEY) and st.button("ダッシュボードで確認 →", type="primary", key="go_dash_btn"):
+        st.session_state.pop(_GO_DASH_KEY, None)
+        st.session_state.current_view = "dashboard"
+        st.rerun()
 
 
 def _kind(repo: str) -> str:
     return "org" if not repo else "repo"
 
 
+@st.cache_data(ttl=300, show_spinner="エージェントの閲覧範囲を取得中…")
+def _github_scope() -> dict[str, list[str]]:
+    """App の閲覧範囲（選択肢）。GitHub API を毎リロードで叩かないよう短時間キャッシュする。"""
+    return services.list_github_scope()
+
+
+def _load_scope() -> dict[str, list[str]] | None:
+    """登録フォームの選択肢を返す。取得できない場合は None（手入力にフォールバック）。"""
+    if not services.github_app_configured():
+        st.caption(
+            "GitHub App の認証情報が未設定のため手入力で登録します。"
+            "環境変数 GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY(_PATH) を設定すると、"
+            "エージェントが閲覧できる範囲から選べるようになります。"
+        )
+        return None
+    try:
+        return _github_scope()
+    except Exception as exc:
+        st.warning(f"エージェントの閲覧範囲を取得できなかったため、手入力で登録します。（{exc}）")
+        return None
+
+
 def _render_register_form() -> None:
-    col_kind, col_name, col_branch, col_btn = st.columns([1.8, 3, 1.5, 1])
+    scope = _load_scope()
+
+    col_kind, col_name, col_btn = st.columns([1.8, 4.5, 1])
 
     with col_kind:
         kind = st.selectbox(
@@ -101,21 +134,27 @@ def _render_register_form() -> None:
     is_org = kind == "Organization"
 
     with col_name:
-        raw = st.text_input(
-            "対象",
-            placeholder="例: example-corp" if is_org else "例: owner/repo",
-            key="repo_name_input",
-            label_visibility="collapsed",
-        )
-
-    with col_branch:
-        st.text_input(
-            "ブランチ（任意）",
-            placeholder="例: main",
-            key="repo_branch_input",
-            label_visibility="collapsed",
-            disabled=is_org,
-        )
+        if scope is None:
+            raw = st.text_input(
+                "対象",
+                placeholder="例: example-corp（配下の全リポジトリが対象）" if is_org else "例: owner/repo",
+                key="repo_name_input",
+                label_visibility="collapsed",
+            )
+        else:
+            options = sorted(scope) if is_org else sorted(r for repos in scope.values() for r in repos)
+            if not options:
+                st.info("エージェントが閲覧できる対象がありません。GitHub App のインストール先を確認してください。")
+                return
+            selected = st.selectbox(
+                "対象",
+                options,
+                index=None,
+                placeholder="Organization を選択（配下の全リポジトリが対象）" if is_org else "リポジトリを選択",
+                key="repo_org_select" if is_org else "repo_repo_select",
+                label_visibility="collapsed",
+            )
+            raw = selected or ""
 
     with col_btn:
         submitted = st.button("登録", type="primary", use_container_width=True, key="repo_register_btn")
@@ -125,10 +164,13 @@ def _render_register_form() -> None:
 
     raw = raw.strip()
     if not raw:
-        st.warning("対象を入力してください。")
+        st.warning("対象を選択してください。" if scope is not None else "対象を入力してください。")
         return
 
     if is_org:
+        if "/" in raw:
+            st.error("Organization 名のみを入力してください。（例: my-org）")
+            return
         owner, repo = raw, ""
     else:
         parts = raw.split("/")
@@ -138,19 +180,37 @@ def _render_register_form() -> None:
         owner, repo = parts[0].strip(), parts[1].strip()
 
     try:
-        repo_id      = services.get_or_create_repository(owner, repo)
+        repo_id = services.get_or_create_repository(owner, repo)
         display_name = owner if is_org else f"{owner}/{repo}"
         # 登録成功 → 「今すぐ収集」待ち状態をセット
         st.session_state[_PENDING_COLLECT] = {
-            "repo_id":      str(repo_id),
+            "repo_id": str(repo_id),
             "display_name": display_name,
-            "kind":         "org" if is_org else "repo",
-            "owner":        owner,
+            "kind": "org" if is_org else "repo",
+            "owner": owner,
         }
         _set_flash("success", f"✅ `{display_name}` を登録しました。")
         st.rerun()
     except Exception as exc:
         st.error(f"登録に失敗しました: {exc}")
+
+
+def _org_rollup(repos: list[dict[str, object]]) -> tuple[dict[str, datetime], dict[str, int]]:
+    """Org 行（repo=""）の表示用に、同一 owner 配下リポジトリの最終収集・Skill 数を集計する。
+
+    Org 行自体は登録マーカーで収集記録を持たないため、配下の実リポジトリから導出する。
+    """
+    last_by_owner: dict[str, datetime] = {}
+    skills_by_owner: dict[str, int] = {}
+    for r in repos:
+        if not str(r["repo"]):
+            continue
+        owner = str(r["owner"])
+        skills_by_owner[owner] = skills_by_owner.get(owner, 0) + int(str(r["skill_count"]))
+        last_at = r["last_collected_at"]
+        if isinstance(last_at, datetime) and (owner not in last_by_owner or last_at > last_by_owner[owner]):
+            last_by_owner[owner] = last_at
+    return last_by_owner, skills_by_owner
 
 
 def _render_repo_table() -> None:
@@ -164,40 +224,51 @@ def _render_repo_table() -> None:
     st.write("")
 
     header_cols = st.columns(_COL_WIDTHS)
-    for col, label in zip(header_cols, _COL_HEADERS):
+    for col, label in zip(header_cols, _COL_HEADERS, strict=False):
         col.markdown(
             f'<span style="color:#59636e;font-size:12px;font-weight:600">{label}</span>',
             unsafe_allow_html=True,
         )
 
-    for r in repos:
-        owner       = str(r["owner"])
-        repo        = str(r["repo"])
-        last_at     = r["last_collected_at"]
-        skill_count = int(str(r["skill_count"]))
-        repo_id     = str(r["id"])
+    last_by_owner, skills_by_owner = _org_rollup(repos)
 
-        kind         = _kind(repo)
-        display_name = owner if kind == "org" else f"{owner}/{repo}"
-        last_str     = last_at.strftime("%Y-%m-%d %H:%M") if last_at else "未収集"
-        branch_str   = "—" if kind == "org" else "main"
-        badge        = _KIND_ORG_BADGE if kind == "org" else _KIND_REPO_BADGE
-        status_html  = (
+    for r in repos:
+        owner = str(r["owner"])
+        repo = str(r["repo"])
+        repo_id = str(r["id"])
+
+        kind = _kind(repo)
+        if kind == "org":
+            display_name = owner
+            last_at = last_by_owner.get(owner)
+            skill_count = skills_by_owner.get(owner, 0)
+        else:
+            display_name = f"{owner}/{repo}"
+            last_at = r["last_collected_at"] if isinstance(r["last_collected_at"], datetime) else None
+            skill_count = int(str(r["skill_count"]))
+
+        last_str = last_at.strftime("%Y-%m-%d %H:%M") if last_at else "未収集"
+        badge = _KIND_ORG_BADGE if kind == "org" else _KIND_REPO_BADGE
+        status_html = (
             '<span style="color:#1f883d;font-weight:600">● 正常</span>'
             if last_at
             else '<span style="color:#59636e">○ 未収集</span>'
         )
 
         clicked = False
-        with st.container(border=True):
+        with st.container(border=True, key=f"repo_box_{repo_id}"):
             row = st.columns(_COL_WIDTHS)
             row[0].markdown(f"**{display_name}**")
             row[1].markdown(badge, unsafe_allow_html=True)
-            row[2].caption(branch_str)
-            row[3].caption(last_str)
-            row[4].caption(str(skill_count))
-            row[5].markdown(status_html, unsafe_allow_html=True)
-            clicked = row[6].button("今すぐ収集", key=f"collect_{repo_id}", use_container_width=True)
+            row[2].caption(last_str)
+            row[3].caption(str(skill_count))
+            row[4].markdown(status_html, unsafe_allow_html=True)
+            # 擬似 owner（local samples / 手動登録の置き場）は GitHub に実在しないため
+            # 「今すぐ収集」を出さない（collect_repo が installation 取得の 404 で落ちる）。
+            if owner not in services.PSEUDO_OWNERS:
+                clicked = row[5].button("今すぐ収集", key=f"collect_{repo_id}", use_container_width=True)
+            else:
+                row[5].caption("収集対象外")
 
         if clicked:
             _collect(repo_id, display_name, kind, owner)

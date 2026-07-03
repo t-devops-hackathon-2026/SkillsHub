@@ -27,7 +27,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from skillshub.shared.models import Skill, SkillEmbedding, Suggestion, SuggestionTarget
-from skillshub.shared.schemas import ComposeSuggestion, SuggestionStatus, SuggestionType
+from skillshub.shared.schemas import ComposeSuggestion, SuggestionType
 
 # ── 定数・型 ────────────────────────────────────────────
 
@@ -193,14 +193,17 @@ def generate_search_reasons(query: str, skills: list[Skill], model: str = SEARCH
 # ── merge 提案の生成 ────────────────────────────────────
 
 
-def _existing_open_merge(session: Session, skill_a_id: UUID, skill_b_id: UUID) -> UUID | None:
-    """同一ペアの open な merge 提案が既にあればその id を返す（冪等性のため）。"""
+def _existing_merge_for_pair(session: Session, skill_a_id: UUID, skill_b_id: UUID) -> UUID | None:
+    """同一ペアの merge 提案が既にあればその id を返す（status は問わない）。
+
+    open だけでなく accepted / dismissed も対象にする。一度人間が判断したペアに
+    次の収集で同じ提案を作り直すと、判断（特に「対応しない」）が無視されてしまうため。
+    """
     targets_a = select(SuggestionTarget.suggestion_id).where(SuggestionTarget.skill_id == skill_a_id)
     targets_b = select(SuggestionTarget.suggestion_id).where(SuggestionTarget.skill_id == skill_b_id)
     stmt = (
         select(Suggestion.id)
         .where(Suggestion.type == SuggestionType.MERGE)
-        .where(Suggestion.status == SuggestionStatus.OPEN)
         .where(Suggestion.id.in_(targets_a))
         .where(Suggestion.id.in_(targets_b))
         .limit(1)
@@ -216,9 +219,9 @@ def create_merge_suggestion(
 ) -> UUID | None:
     """2 Skill の merge 提案（suggestion + suggestion_target 2行）を生成する。
 
-    同一ペアの open な merge 提案が既にあれば何もせず ``None`` を返す（冪等）。
+    同一ペアの merge 提案が既にあれば（判断済みも含め）何もせず ``None`` を返す（冪等）。
     """
-    existing = _existing_open_merge(session, skill_a.id, skill_b.id)
+    existing = _existing_merge_for_pair(session, skill_a.id, skill_b.id)
     if existing is not None:
         return None
 

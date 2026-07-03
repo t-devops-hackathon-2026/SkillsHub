@@ -6,7 +6,7 @@ from typing import Literal
 
 import streamlit as st
 
-from skillshub.app.views import dashboard, repos, search
+from skillshub.app.views import dashboard, detail, repos, search, suggestions
 from skillshub.app.views.components import inject_github_style
 from skillshub.shared import services
 
@@ -37,7 +37,7 @@ def _render_sidebar() -> None:
     nav_items = [
         ("dashboard", "スキル一覧"),
         ("search", "スキルを探す"),
-        ("suggestions", "改善の提案を確認する"),
+        ("suggestions", "提案を確認する"),
         ("repos", "収集元を追加する"),
     ]
 
@@ -77,11 +77,36 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
     ok = 0
     failed = 0
     with st.status("エージェントが同期中…", expanded=True) as status:
+        # Organization 登録（repo=""）を先に一括収集し、配下リポジトリの二重収集を避ける。
+        synced_ids: set[str] = set()
         for r in repositories:
+            owner = str(r["owner"])
+            if r["repo"]:
+                continue
+            st.write(f"{owner}（Organization）を収集しています…")
+            try:
+                org_result = services.collect_org(owner)
+                synced_ids.update(org_result.repo_ids)
+                ok += len(org_result.repo_ids) - len(org_result.failed_repos)
+                failed += len(org_result.failed_repos)
+                for failed_name in org_result.failed_repos:
+                    st.write(f"{failed_name} の収集に失敗しました")
+            except Exception as exc:  # noqa: BLE001 — 1 Org の失敗で他の同期元を止めない
+                failed += 1
+                st.write(f"{owner} の収集に失敗しました: {exc}")
+
+        for r in repositories:
+            if not r["repo"] or str(r["id"]) in synced_ids:
+                continue
             name = f"{r['owner']}/{r['repo']}"
+            # 擬似 owner（services.PSEUDO_OWNERS）のうち local はローカル samples を収集し、
+            # それ以外（手動登録 Skill の置き場）は GitHub に実在しないため同期しない。
+            if r["owner"] != services.LOCAL_OWNER and r["owner"] in services.PSEUDO_OWNERS:
+                st.write(f"{name} は手動登録 Skill の置き場のためスキップしました")
+                continue
             st.write(f"{name} を収集しています…")
             try:
-                if r["owner"] == "local":
+                if r["owner"] == services.LOCAL_OWNER:
                     services.collect_local(_SAMPLES_ROOT)
                 else:
                     services.collect_repo(str(r["id"]))
@@ -105,14 +130,9 @@ def _render_content() -> None:
     elif view == "search":
         search.render()
     elif view == "detail":
-        st.title("Skill 詳細")
-        st.info(f"詳細画面は準備中です（Issue #15）  ·  Skill ID: {st.session_state.selected_skill_id}")
-        if st.button("← ダッシュボードに戻る"):
-            st.session_state.current_view = "dashboard"
-            st.rerun()
+        detail.render()
     elif view == "suggestions":
-        st.title("改善の提案を確認する")
-        st.info("この画面は準備中です（Issue #15）")
+        suggestions.render()
     elif view == "repos":
         repos.render()
     else:

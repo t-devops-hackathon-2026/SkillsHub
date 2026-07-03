@@ -224,6 +224,29 @@ def _token_headers(token: str) -> dict[str, str]:
 # ── リポジトリ列挙 ──────────────────────────────────────
 
 
+def list_app_installations(app_jwt: str) -> list[tuple[int, str]]:
+    """この App の全インストールを ``(installation_id, アカウント名)`` で返す。
+
+    アカウントは Org またはユーザー。App をインストールした先が App の閲覧範囲になる。
+    """
+    installations: list[tuple[int, str]] = []
+    page = 1
+    while True:
+        resp = _request(
+            "GET",
+            f"{GITHUB_API}/app/installations",
+            headers=_app_headers(app_jwt),
+            params={"per_page": 100, "page": page},
+        )
+        items: list[dict[str, Any]] = resp.json()
+        for item in items:
+            installations.append((int(item["id"]), str(item["account"]["login"])))
+        if len(items) < 100:
+            break
+        page += 1
+    return installations
+
+
 def list_installation_repositories(token: str) -> list[tuple[str, str, str]]:
     """インストールがアクセス可能な全リポジトリを ``(owner, repo, default_branch)`` で返す。
 

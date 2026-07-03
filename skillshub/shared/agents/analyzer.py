@@ -5,8 +5,8 @@
 Gemini Flash 既定。SKILL.md 本文をユーザーメッセージとして渡し、name/description/tags/usage と
 古さ兆候（``is_possibly_outdated``）を構造化して返させる。
 
-``draft_update`` は鮮度 ``needs_update`` 検知時のみ呼ぶ別建ての軽量生成（schema なし）。Analyzer
-本体を単一責務に保つため、diff 下書き生成は分離している。
+``draft_update`` は鮮度 ``needs_update`` 検知時のみ呼ぶ別建ての生成（``UpdateDraft`` スキーマ）。
+Analyzer 本体を単一責務に保つため、diff 下書き生成は分離している。
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from skillshub.shared.schemas import AnalyzedSkill, RawSkill
+from skillshub.shared.schemas import AnalyzedSkill, RawSkill, UpdateDraft
 
 MODEL = "gemini-2.5-flash"
 
@@ -40,8 +40,17 @@ _ANALYZER_INSTRUCTION = """\
 
 _UPDATE_DRAFTER_INSTRUCTION = """\
 あなたは Skill のメンテナンス担当です。次の SKILL.md は依存（参照API・ツール）が古い可能性が
-あります。古い記述を新しくするための「修正方針」を、unified diff 風の下書きとして提案してください。
-実コミットは作者が手元で行う前提なので、変更すべき箇所と方向性が伝われば十分です。"""
+あります。カタログ管理者がこの提案を「採用するか却下するか」を数秒で判断できるよう、次の3点を
+出力してください。
+
+- situation: 何がどう古いのか（1〜2文。例:「参照している Data Catalog API v1 は廃止予定で、
+  認証も旧トークン方式のままです」）
+- proposal: どう直せばよいか（1〜2文。変更の方向性を言い切る）
+- diff: 修正方針を示す unified diff。説明文・見出し・コードフェンス（```）は含めず、diff 本文のみ。
+  実コミットは作者が手元で行う前提なので、変更すべき箇所と方向性が伝われば十分です。
+
+挨拶や前置き（「承知いたしました」等）は一切出力しないでください。必ず指定のスキーマに従って
+出力してください。"""
 
 
 def build_analyzer_agent() -> LlmAgent:
@@ -56,12 +65,28 @@ def build_analyzer_agent() -> LlmAgent:
 
 
 def build_update_drafter_agent() -> LlmAgent:
-    """update 提案（diff 下書き）を生成する軽量 LlmAgent（schema なし）。"""
+    """update 提案（状況・提案・diff）を生成する LlmAgent（``UpdateDraft`` スキーマ）。"""
     return LlmAgent(
         name="update_drafter",
         model=MODEL,
         instruction=_UPDATE_DRAFTER_INSTRUCTION,
+        output_schema=UpdateDraft,
+        output_key="update_draft",
     )
+
+
+def format_update_draft(draft: UpdateDraft) -> str:
+    """``UpdateDraft`` を suggestions.content 用のテキストに整形する。
+
+    er.md の決定どおり diff は専用カラムに持たず content に内包する。画面側
+    （suggestions.py）は ```diff フェンスを目印に散文と diff を分けて描画する。
+    """
+    # モデルが指示に反してフェンスを付けてきた場合に備えて剥がす。
+    diff_body = draft.diff.strip()
+    if diff_body.startswith("```"):
+        diff_body = diff_body.strip("`\n")
+        diff_body = diff_body.removeprefix("diff\n")
+    return f"**状況:** {draft.situation.strip()}\n\n**提案:** {draft.proposal.strip()}\n\n```diff\n{diff_body}\n```"
 
 
 async def analyze_skill(raw: RawSkill) -> AnalyzedSkill:
@@ -74,10 +99,13 @@ async def analyze_skill(raw: RawSkill) -> AnalyzedSkill:
 
 
 async def draft_update(raw: RawSkill, outdated_reason: str | None) -> str:
-    """needs_update の Skill に対する diff 下書きを生成する（要 Gemini 認証）。"""
+    """needs_update の Skill に対する更新ドラフトを生成し、content 用テキストで返す（要 Gemini 認証）。"""
     prompt = f"# 古さの根拠\n{outdated_reason or '(不明)'}\n\n# SKILL.md\n{raw.skill_md_text}"
-    agent = build_update_drafter_agent()
-    return await _run_agent_text_response(agent, prompt)
+    state = await _run_agent_once(build_update_drafter_agent(), prompt)
+    data = state.get("update_draft")
+    if data is None:
+        raise RuntimeError(f"update ドラフトの生成に失敗しました: {raw.source_path}")
+    return format_update_draft(UpdateDraft.model_validate(data))
 
 
 # ── ADK Runner ヘルパ ───────────────────────────────────
@@ -102,15 +130,3 @@ async def _run_agent_once(agent: LlmAgent, text: str) -> dict[str, object]:
         pass
     session = await runner.session_service.get_session(app_name=_APP_NAME, user_id=_USER_ID, session_id=session_id)
     return dict(session.state) if session else {}
-
-
-async def _run_agent_text_response(agent: LlmAgent, text: str) -> str:
-    """エージェントを 1 回実行し、最終応答テキストを返す（schema なし生成用）。"""
-    runner, session_id = await _new_runner(agent)
-    response = ""
-    async for event in runner.run_async(user_id=_USER_ID, session_id=session_id, new_message=_user_message(text)):
-        if event.content and event.content.parts:
-            text_parts = [p.text for p in event.content.parts if p.text]
-            if text_parts:
-                response = "".join(text_parts)
-    return response

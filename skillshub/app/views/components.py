@@ -10,7 +10,7 @@ import html
 
 import streamlit as st
 
-from skillshub.shared.schemas import UpdateStatus
+from skillshub.shared.schemas import SuggestionType, UpdateStatus
 
 # 更新状態 → (表示ラベル, 背景色, 文字色)。GitHub Primer 風の配色。
 UPDATE_STATUS_CONFIG: dict[UpdateStatus, tuple[str, str, str]] = {
@@ -19,9 +19,25 @@ UPDATE_STATUS_CONFIG: dict[UpdateStatus, tuple[str, str, str]] = {
     UpdateStatus.NEEDS_UPDATE: ("要更新", "#ffebe9", "#cf222e"),
 }
 
+# 提案タイプ → (表示ラベル, 背景色, 文字色)。実装語（merge 等）は UI に出さない。
+SUGGESTION_TYPE_CONFIG: dict[SuggestionType, tuple[str, str, str]] = {
+    SuggestionType.MERGE: ("重複の統合", "#ddf4ff", "#0969da"),
+    SuggestionType.COMPOSE: ("ワークフロー合成", "#fbefff", "#8250df"),
+    SuggestionType.UPDATE: ("内容の更新", "#fff8c5", "#9a6700"),
+}
+
 
 def update_status_badge(status: UpdateStatus) -> str:
     label, bg, color = UPDATE_STATUS_CONFIG[status]
+    return (
+        f'<span style="background:{bg};color:{color};padding:2px 10px;'
+        f"border-radius:12px;font-size:12px;font-weight:600;display:inline-block;"
+        f'white-space:nowrap">{label}</span>'
+    )
+
+
+def suggestion_type_badge(type_: SuggestionType) -> str:
+    label, bg, color = SUGGESTION_TYPE_CONFIG[type_]
     return (
         f'<span style="background:{bg};color:{color};padding:2px 10px;'
         f"border-radius:12px;font-size:12px;font-weight:600;display:inline-block;"
@@ -123,7 +139,8 @@ section.main [data-testid="stFormSubmitButton"] button[kind="primary"]:hover{
    st.container(border=True, key=...) の key（skill_box_ / _box / repo_box_）で狙う。 */
 .stVerticalBlock[class*="st-key-skill_box_"],
 .stVerticalBlock[class*="st-key-hist_"],
-.stVerticalBlock[class*="st-key-repo_box_"]{
+.stVerticalBlock[class*="st-key-repo_box_"],
+.stVerticalBlock[class*="st-key-suggestion_box_"]{
   background:var(--gh-card);border:1px solid var(--gh-line);border-radius:8px;
   padding:1rem 1rem 1.25rem;box-shadow:var(--gh-shadow),var(--gh-shadow-2);
   transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
@@ -140,7 +157,8 @@ section.main [data-testid="stFormSubmitButton"] button[kind="primary"]:hover{
 /* 状態バッジはカード右上に絶対配置し、スキル名と同じ高さに固定する。
    バッジを包む要素コンテナごとフローから外す（gap の幽霊余白を作らない）。 */
 .stVerticalBlock[class*="st-key-skill_box_"],
-.stVerticalBlock[class*="st-key-hist_"]{position:relative}
+.stVerticalBlock[class*="st-key-hist_"],
+.stVerticalBlock[class*="st-key-suggestion_box_"]{position:relative}
 [data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] .sh-badge-abs){
   position:absolute;top:13px;right:1rem;width:auto;margin:0;z-index:1}
 div[class*="st-key-"][class*="_card_"]{padding-right:104px}
@@ -150,21 +168,27 @@ div[class*="st-key-"][class*="_card_"]{padding-right:104px}
 
 /* 中央寄せの矯正：タイトルリンク・サイドバー・メトリクスは左揃え
    （ボタン内側の flex ラッパーが中央寄せのため、内側まで指定する） */
-div[class*="st-key-"][class*="_card_"] button p{text-align:left;width:100%;
+div[class*="st-key-"][class*="_card_"] button p,
+div[class*="st-key-"][class*="_link_"] button p{text-align:left;width:100%;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-div[class*="st-key-"][class*="_card_"] button>div{justify-content:flex-start;width:100%;min-width:0}
+div[class*="st-key-"][class*="_card_"] button>div,
+div[class*="st-key-"][class*="_link_"] button>div{justify-content:flex-start;width:100%;min-width:0}
 [data-testid="stSidebar"] .stButton button p{text-align:left;width:100%}
 [data-testid="stSidebar"] .stButton button>div{justify-content:flex-start;width:100%}
 [data-testid="stMetric"]{text-align:left}
 
-/* ── Skill カードのタイトル（key に "_card_" を含むボタン）：リンク風 ── */
-div[class*="st-key-"][class*="_card_"] button{
+/* ── Skill カードのタイトル（key に "_card_" を含むボタン）：リンク風 ──
+   "_link_" はカード内リンク用の小さめ変種（右上バッジ回避の padding を持たない）。 */
+div[class*="st-key-"][class*="_card_"] button,
+div[class*="st-key-"][class*="_link_"] button{
   background:transparent;border:0;box-shadow:none;padding:0;
   min-height:0;height:auto;
   color:var(--gh-accent);font-weight:600;font-size:1.05rem;
   justify-content:flex-start;text-align:left}
-div[class*="st-key-"][class*="_card_"] button:hover{
+div[class*="st-key-"][class*="_card_"] button:hover,
+div[class*="st-key-"][class*="_link_"] button:hover{
   background:transparent;color:var(--gh-accent);text-decoration:underline}
+div[class*="st-key-"][class*="_link_"] button{font-size:.95rem}
 
 /* ── サマリー（st.metric）── */
 [data-testid="stMetric"]{background:var(--gh-card);border:1px solid var(--gh-line);
