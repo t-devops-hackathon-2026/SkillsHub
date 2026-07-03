@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -11,6 +13,33 @@ from skillshub.app.views.components import inject_github_style
 from skillshub.shared import services
 
 _SAMPLES_ROOT = Path(__file__).resolve().parents[2] / "samples"
+
+
+def _check_password() -> bool:
+    """公開デプロイ向けの簡易パスワードゲート。
+
+    ``APP_PASSWORD`` が未設定（ローカル開発）ならゲートを出さず素通しする。
+    デプロイ環境では Secret Manager の値を ``--set-secrets`` で env として渡す想定。
+    """
+    expected = os.environ.get("APP_PASSWORD")
+    if not expected:
+        return True
+    if st.session_state.get("password_verified"):
+        return True
+
+    _, center, _ = st.columns([1, 1, 1])
+    with center:
+        st.markdown('<div class="sh-logo"><span class="sh-mark">S</span>SkillsHub</div>', unsafe_allow_html=True)
+        with st.form("password_gate"):
+            entered = st.text_input("パスワード", type="password")
+            submitted = st.form_submit_button("開く", type="primary", use_container_width=True)
+        if submitted:
+            # str のまま比較すると非 ASCII 入力で TypeError になるため bytes で比較する。
+            if hmac.compare_digest(entered.encode(), expected.encode()):
+                st.session_state.password_verified = True
+                st.rerun()
+            st.error("パスワードが違います")
+    return False
 
 
 def _init_session_state() -> None:
@@ -174,6 +203,7 @@ def _render_content() -> None:
 
 st.set_page_config(page_title="SkillsHub", page_icon=":material/local_library:", layout="wide")
 inject_github_style()
-_init_session_state()
-_render_sidebar()
-_render_content()
+if _check_password():
+    _init_session_state()
+    _render_sidebar()
+    _render_content()
