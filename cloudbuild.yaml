@@ -1,0 +1,20 @@
+# main への push（Cloud Build トリガー）または `gcloud builds submit` で
+# イメージを1本ビルドし、Artifact Registry へ push する。
+#
+# 同じイメージを次の3ワークロードで共用する（起動コマンドだけ変える）:
+# - Cloud Run サービス（Streamlit）… --command=./scripts/serve.sh
+# - 司書 Job（日次収集）           … --command=python --args=-m,skillshub.batch.run_collect
+# - マイグレーション Job           … 既定 CMD（./scripts/migrate.sh）
+#
+# タグは latest のみ（ハッカソン運用の割り切り。手動 submit でも COMMIT_SHA 無しで通る）。
+# デプロイは自動化せず、README「デプロイ（Cloud Run）」のコマンドで行う。
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=asia-northeast1-docker.pkg.dev/$PROJECT_ID/skillhub/app:latest
+      - .
+images:
+  - asia-northeast1-docker.pkg.dev/$PROJECT_ID/skillhub/app:latest
+options:
+  logging: CLOUD_LOGGING_ONLY

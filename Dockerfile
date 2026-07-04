@@ -1,4 +1,6 @@
-# マイグレーション／シード実行用イメージ。デプロイ(#22)のアプリ実行にも流用できる。
+# 全ワークロード共用イメージ（cloudbuild.yaml でビルド）。
+# 既定 CMD はマイグレーション／シード。アプリは --command=./scripts/serve.sh、
+# 司書 Job は --command=python --args=-m,skillshub.batch.run_collect で起動する。
 FROM python:3.12-slim
 
 # uv を同梱イメージからコピー（依存解決を高速・再現可能に）
