@@ -172,6 +172,12 @@ section.main .stButton button[kind="primary"]:hover,
 section.main [data-testid="stFormSubmitButton"] button[kind="primary"]:hover{
   background:var(--gh-success-h);color:#fff}
 
+/* 無効化ボタンのアイコンをスピナーとして回転させる（「同期中...」表示用）。
+   現状 disabled ボタンはこの用途のみなので、通常の disabled 全般に対して安全に適用できる。 */
+@keyframes sh-spin{to{transform:rotate(360deg)}}
+.stButton button:disabled [data-testid="stIconMaterial"]{
+  display:inline-block;animation:sh-spin 1s linear infinite}
+
 /* ── border 付きコンテナ：Primer Box（カード）──
    st.container(border=True, key=...) の key（skill_box_ / _box / repo_box_）で狙う。 */
 .stVerticalBlock[class*="st-key-skill_box_"],
