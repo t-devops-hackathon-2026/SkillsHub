@@ -32,7 +32,7 @@ def _check_password() -> bool:
         st.markdown(
             '<div class="sh-login-head">'
             '<span class="sh-mark">S</span>'
-            '<div class="sh-login-title">SkillsHub にサインイン</div>'
+            '<div class="sh-login-title">SkillsHub にログイン</div>'
             '<div class="sh-login-sub">パスワードを入力してください</div>'
             "</div>",
             unsafe_allow_html=True,
@@ -40,7 +40,7 @@ def _check_password() -> bool:
         # st.form 自体には key クラスが付かないため、CSS で狙えるよう keyed container で包む。
         with st.container(key="login_card"), st.form("password_gate"):
             entered = st.text_input("パスワード", type="password")
-            submitted = st.form_submit_button("サインイン", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("ログイン", type="primary", use_container_width=True)
         if submitted:
             # str のまま比較すると非 ASCII 入力で TypeError になるため bytes で比較する。
             if hmac.compare_digest(entered.encode(), expected.encode()):
