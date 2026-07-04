@@ -20,7 +20,7 @@ uv sync
 ./scripts/migrate.sh
 ```
 
-> `scripts/migrate.sh` は `alembic upgrade head` と `python -m skillshub.db.seed`（手動 Skill 2件＋空 Repository 1件・冪等）を順に流すだけのラッパ。個別に流したい場合は `uv run alembic upgrade head` / `uv run python -m skillshub.db.seed` を直接実行してもよい。staging では同じ `migrate.sh` を Cloud Run Job のコマンドとして使う。
+> `scripts/migrate.sh` は `alembic upgrade head` と `python -m skillshub.db.seed`（手動 Skill 2件＋空 Repository 1件・冪等）を順に流すだけのラッパ。個別に流したい場合は `uv run alembic upgrade head` / `uv run python -m skillshub.db.seed` を直接実行してもよい。staging では同じ `migrate.sh` を Cloud Run Job のコマンドとして使う。手動 Skill 2件は架空のデモデータのため、本番・staging では環境変数 `SEED_DEMO_SKILLS=0` を設定して投入をスキップする（「初期状態に戻す」ボタン経由の再シードにも同じガードが効く）。
 
 ### 接続確認
 

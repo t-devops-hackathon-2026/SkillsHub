@@ -4,6 +4,8 @@
 - 空の Repository 1件 … 登録済みだが未収集のリポジトリ。画面⑤「今すぐ収集」のデモ用。
 - 手動 Skill 2件 … 検索デモ用の題材（議事録要約 / タスク抽出）。
   Skill は repo_id が NOT NULL のため、手動登録用のリポジトリ 1件にぶら下げる。
+  架空データのため、本番では ``SEED_DEMO_SKILLS=0`` で投入をスキップできる
+  （空 Repository は実在リポジトリなので常に投入する）。
 
 実行: `uv run python -m skillshub.db.seed`
 何度流しても重複しない（owner/repo・(repo_id, name) で存在チェックしてから挿入）。
@@ -11,6 +13,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 from uuid import UUID
 
@@ -41,16 +44,32 @@ def _get_or_create_skill(session: Session, *, repo_id: UUID, name: str, **fields
     return skill
 
 
+def _should_seed_demo_skills() -> bool:
+    """デモ Skill を投入するかどうか（既定 True、env ``SEED_DEMO_SKILLS``）。
+
+    env 未設定・空文字の場合は既定値を使う（config.get_secret と同じく空文字は未設定扱い）。
+    """
+    value = os.environ.get("SEED_DEMO_SKILLS")
+    if not value:
+        return True
+    return value.lower() not in {"0", "false"}
+
+
 def seed_into(session: Session) -> None:
     """与えられた session に初期データを投入する（commit は呼び出し側の責務）。
 
     デモリセット（services.reset_demo_data）が全削除と同一トランザクションで
-    呼べるよう、session 管理を seed() から分離してある。
+    呼べるよう、session 管理を seed() から分離してある。ガードをここに置くことで、
+    migrate 経由でもリセットボタン経由でも本番にデモ Skill が入らないようにする。
     """
+    # 収集デモ用の空リポジトリ（Skill を持たない）。実在リポジトリなので常に投入する。
+    _get_or_create_repository(session, owner="t-devops-hackathon-2026", repo="ai-agent", install_id=None)
+
+    if not _should_seed_demo_skills():
+        return
+
     # 手動 Skill を載せるリポジトリ（手動登録の置き場）。
     manual_repo = _get_or_create_repository(session, owner="internal", repo="manual-skills", install_id=None)
-    # 収集デモ用の空リポジトリ（Skill を持たない）。
-    _get_or_create_repository(session, owner="t-devops-hackathon-2026", repo="ai-agent", install_id=None)
 
     _get_or_create_skill(
         session,
@@ -80,7 +99,10 @@ def seed() -> None:
     with Session(_get_engine()) as session:
         seed_into(session)
         session.commit()
-    print("seed 完了: repositories=2, skills=2")
+    if _should_seed_demo_skills():
+        print("seed 完了: repositories=2, skills=2")
+    else:
+        print("seed 完了: repositories=1, skills=0（SEED_DEMO_SKILLS によりデモ Skill をスキップ）")
 
 
 if __name__ == "__main__":
