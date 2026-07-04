@@ -4,10 +4,13 @@
 # 接続先は DATABASE_URL（ローカルは .env、デプロイ環境は Secret Manager）を参照する。
 set -euo pipefail
 
+# uv run 経由で実行することで、venv を activate していないシェルからでも Docker 内でも動く。
+# --no-sync は「既にある .venv をそのまま使う」指定。実行時に依存の再解決・再インストールを
+# 走らせない（Cloud Run Job などネットワークに出たくない実行環境で必須）。
 echo "==> alembic upgrade head"
-alembic upgrade head
+uv run --no-sync alembic upgrade head
 
 echo "==> seed (冪等)"
-python -m skillshub.db.seed
+uv run --no-sync python -m skillshub.db.seed
 
 echo "==> done"
