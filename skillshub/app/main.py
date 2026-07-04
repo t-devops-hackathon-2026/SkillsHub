@@ -129,7 +129,18 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
 
     ok = 0
     failed = 0
-    with st.status("エージェントが同期中…", expanded=True) as status:
+    total = len(repositories)
+    done = 0
+    with st.status(f"エージェントが同期中… (0/{total} 同期元)", expanded=True) as status:
+        bar = st.progress(0.0)
+
+        def _step_done() -> None:
+            """同期元 1 エントリの処理完了ごとに進捗バーとラベルを進める。"""
+            nonlocal done
+            done += 1
+            bar.progress(done / total)
+            status.update(label=f"エージェントが同期中… ({done}/{total} 同期元)")
+
         # Organization 登録（repo=""）を先に一括収集し、配下リポジトリの二重収集を避ける。
         synced_ids: set[str] = set()
         for r in repositories:
@@ -147,15 +158,20 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
             except Exception as exc:  # noqa: BLE001 — 1 Org の失敗で他の同期元を止めない
                 failed += 1
                 st.write(f"{owner} の収集に失敗しました: {exc}")
+            _step_done()
 
         for r in repositories:
-            if not r["repo"] or str(r["id"]) in synced_ids:
+            if not r["repo"]:
+                continue  # Organization は上のループで処理済み
+            if str(r["id"]) in synced_ids:
+                _step_done()  # Organization 一括収集でカバー済みのエントリ
                 continue
             name = f"{r['owner']}/{r['repo']}"
             # 擬似 owner（services.PSEUDO_OWNERS）のうち local はローカル samples を収集し、
             # それ以外（手動登録 Skill の置き場）は GitHub に実在しないため同期しない。
             if r["owner"] != services.LOCAL_OWNER and r["owner"] in services.PSEUDO_OWNERS:
                 st.write(f"{name} は手動登録 Skill の置き場のためスキップしました")
+                _step_done()
                 continue
             st.write(f"{name} を収集しています…")
             try:
@@ -167,6 +183,7 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
             except Exception as exc:  # noqa: BLE001 — 1 リポジトリの失敗で他リポジトリを止めない
                 failed += 1
                 st.write(f"{name} の収集に失敗しました: {exc}")
+            _step_done()
         status.update(
             label=f"同期完了 — 成功 {ok} 件 / 失敗 {failed} 件",
             state="error" if failed else "complete",
