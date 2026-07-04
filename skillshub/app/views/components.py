@@ -185,9 +185,11 @@ section.main [data-testid="stFormSubmitButton"] button[kind="primary"]:hover{
   padding:1.3rem 1.3rem 1.1rem;box-shadow:var(--gh-shadow),var(--gh-shadow-2)}
 /* 入力欄右下の「Press Enter to submit form」ヒントはカードからはみ出すので出さない */
 [class*="st-key-login_card"] [data-testid="InputInstructions"]{display:none}
-/* パスワード表示切り替え（目のアイコン）も出さない */
+/* パスワード表示切り替え（目のアイコン）も出さない。
+   アイコン用の右 padding も詰めて、入力欄とログインボタンの幅を揃える */
 [class*="st-key-login_card"] button[title="Show password text"],
 [class*="st-key-login_card"] button[title="Hide password text"]{display:none}
+[class*="st-key-login_card"] [data-testid="stTextInputRootElement"]{padding-right:0}
 /* フォーム送信ボタンの primary は kind="primaryFormSubmit" になるため個別に狙う */
 [class*="st-key-login_card"] button[kind="primaryFormSubmit"]{
   background:var(--gh-success);border-color:rgba(31,35,40,.15);color:#fff;
