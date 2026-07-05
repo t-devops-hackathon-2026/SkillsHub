@@ -172,6 +172,12 @@ section.main .stButton button[kind="primary"]:hover,
 section.main [data-testid="stFormSubmitButton"] button[kind="primary"]:hover{
   background:var(--gh-success-h);color:#fff}
 
+/* 無効化ボタンのアイコンをスピナーとして回転させる（「同期中...」表示用）。
+   現状 disabled ボタンはこの用途のみなので、通常の disabled 全般に対して安全に適用できる。 */
+@keyframes sh-spin{to{transform:rotate(360deg)}}
+.stButton button:disabled [data-testid="stIconMaterial"]{
+  display:inline-block;animation:sh-spin 1s linear infinite}
+
 /* ── ログインゲート：GitHub サインイン風 ──
    ロゴマークだけ Copilot 風グラデにして、フォームは Primer Box のカードに揃える。 */
 .sh-login-head{display:flex;flex-direction:column;align-items:center;gap:12px;

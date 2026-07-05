@@ -93,7 +93,7 @@ def render_suggestion_card(suggestion: SuggestionView, key_prefix: str, *, show_
             # ラベルとリンクを1行に流す（container を CSS で横並びにする。cf. _targets）。
             with st.container(key=f"{key_prefix}_targets"):
                 st.markdown(
-                    '<span style="font-size:13px;color:#59636e">対象:</span>',
+                    '<span style="font-size:13px;color:#59636e">対象スキル:</span>',
                     unsafe_allow_html=True,
                 )
                 for target in suggestion.targets:
