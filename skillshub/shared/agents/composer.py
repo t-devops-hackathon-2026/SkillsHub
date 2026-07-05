@@ -1,6 +1,6 @@
 """Composer: 検索候補の Skill を組み合わせた合成ワークフローを構造化提案する。
 
-仕様の正は docs/designs/step1/step1.md「自然言語検索」。重い推論なのでモデルは Pro 系を使う。
+仕様の正は docs/designs/step1/step1.md「自然言語検索」。重い推論なので上位モデルを使う。
 Searcher→Composer は機械的に直列化せず、サービス層（shared.services.search_skills）が
 候補数を見て 2 件以上のときだけ起動する。
 
@@ -20,8 +20,9 @@ from pydantic import BaseModel
 
 from skillshub.shared.schemas import ComposeSuggestion, SearchResultItem
 
-# 重い推論なので Pro 系（仕様の Flash/Pro 使い分け）。
-COMPOSER_MODEL = "gemini-2.5-pro"
+# 重い推論枠（仕様の Flash/Pro 使い分けの「Pro」相当）。3.5 Flash は 3.1 Pro より
+# 安価で推論性能が高いため、Pro 系の後継としてこちらを使う。
+COMPOSER_MODEL = "gemini-3.5-flash"
 
 # 合成提案は候補が 2 件以上のときだけ生成する（仕様: 候補2件以上で Composer 起動）。
 _MIN_CANDIDATES_FOR_COMPOSE = 2
@@ -41,7 +42,7 @@ class ComposerWorkflow(BaseModel):
 
 
 # クエリ・候補・モデル名から合成ワークフローを生成する関数型。
-# 既定は Gemini Pro だが、テストでは決定論的なフェイクを注入できる。
+# 既定は Gemini だが、テストでは決定論的なフェイクを注入できる。
 ComposeGenerateFn = Callable[[str, list[SearchResultItem], str], "ComposerWorkflow | None"]
 
 
@@ -81,11 +82,14 @@ def run_composer(
 
 
 def _generate_compose(query: str, items: list[SearchResultItem], model: str) -> ComposerWorkflow:
-    """Gemini Pro で合成ワークフロー（title/body）を構造化生成する（既定の生成実装）。
+    """Gemini で合成ワークフロー（title/body）を構造化生成する（既定の生成実装）。
 
-    ``vertexai`` は関数内で遅延 import する（GCP 認証が無い環境では呼ばない）。
+    ``google-genai`` は関数内で遅延 import する（Gemini 認証が無い環境では呼ばない）。
+    ``response_schema`` には Pydantic モデル（``ComposerWorkflow``）をそのまま渡せる。
     """
-    from vertexai.generative_models import GenerationConfig, GenerativeModel
+    from google.genai import types
+
+    from skillshub.shared.tools.ai_tools import get_genai_client
 
     listed = "\n".join(f"- {item.skill.name}: {item.skill.description}" for item in items)
     prompt = (
@@ -100,22 +104,13 @@ def _generate_compose(query: str, items: list[SearchResultItem], model: str) -> 
         "- 提案する場合は needed を true にし、title はワークフローの短い名前、"
         "body はどの Skill をどの順で使い、何が得られるかを説明する文章にしてください。"
     )
-    schema = {
-        "type": "object",
-        "properties": {
-            "needed": {"type": "boolean"},
-            "title": {"type": "string"},
-            "body": {"type": "string"},
-        },
-        "required": ["needed", "title", "body"],
-    }
-    response = GenerativeModel(model).generate_content(
-        prompt,
-        generation_config=GenerationConfig(
+    response = get_genai_client().models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
             response_mime_type="application/json",
-            response_schema=schema,
+            response_schema=ComposerWorkflow,
             temperature=0.4,
         ),
     )
-    data = json.loads(response.text)
-    return ComposerWorkflow(needed=bool(data["needed"]), title=str(data["title"]), body=str(data["body"]))
+    return ComposerWorkflow.model_validate(json.loads(response.text))

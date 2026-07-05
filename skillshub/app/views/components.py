@@ -172,6 +172,31 @@ section.main .stButton button[kind="primary"]:hover,
 section.main [data-testid="stFormSubmitButton"] button[kind="primary"]:hover{
   background:var(--gh-success-h);color:#fff}
 
+/* ── ログインゲート：GitHub サインイン風 ──
+   ロゴマークだけ Copilot 風グラデにして、フォームは Primer Box のカードに揃える。 */
+.sh-login-head{display:flex;flex-direction:column;align-items:center;gap:12px;
+  margin:11vh 0 20px;text-align:center}
+.sh-login-head .sh-mark{width:48px;height:48px;border-radius:12px;font-size:24px;
+  background:var(--gh-grad);box-shadow:var(--gh-shadow-2)}
+.sh-login-title{font-size:1.3rem;font-weight:600;color:var(--gh-ink)}
+.sh-login-sub{font-size:.85rem;color:var(--gh-muted)}
+[class*="st-key-login_card"] [data-testid="stForm"]{
+  background:var(--gh-card);border:1px solid var(--gh-line);border-radius:8px;
+  padding:1.3rem 1.3rem 1.1rem;box-shadow:var(--gh-shadow),var(--gh-shadow-2)}
+/* 入力欄右下の「Press Enter to submit form」ヒントはカードからはみ出すので出さない */
+[class*="st-key-login_card"] [data-testid="InputInstructions"]{display:none}
+/* パスワード表示切り替え（目のアイコン）も出さない。
+   アイコン用の右 padding も詰めて、入力欄とログインボタンの幅を揃える */
+[class*="st-key-login_card"] button[title="Show password text"],
+[class*="st-key-login_card"] button[title="Hide password text"]{display:none}
+[class*="st-key-login_card"] [data-testid="stTextInputRootElement"]{padding-right:0}
+/* フォーム送信ボタンの primary は kind="primaryFormSubmit" になるため個別に狙う */
+[class*="st-key-login_card"] button[kind="primaryFormSubmit"]{
+  background:var(--gh-success);border-color:rgba(31,35,40,.15);color:#fff;
+  box-shadow:0 1px 0 rgba(31,35,40,.1)}
+[class*="st-key-login_card"] button[kind="primaryFormSubmit"]:hover{
+  background:var(--gh-success-h);color:#fff}
+
 /* 無効化ボタンのアイコンをスピナーとして回転させる（「同期中...」表示用）。
    現状 disabled ボタンはこの用途のみなので、通常の disabled 全般に対して安全に適用できる。 */
 @keyframes sh-spin{to{transform:rotate(360deg)}}

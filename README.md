@@ -20,7 +20,7 @@ uv sync
 ./scripts/migrate.sh
 ```
 
-> `scripts/migrate.sh` は `alembic upgrade head` と `python -m skillshub.db.seed`（手動 Skill 2件＋空 Repository 1件・冪等）を順に流すだけのラッパ。個別に流したい場合は `uv run alembic upgrade head` / `uv run python -m skillshub.db.seed` を直接実行してもよい。staging では同じ `migrate.sh` を Cloud Run Job のコマンドとして使う。
+> `scripts/migrate.sh` は `alembic upgrade head` と `python -m skillshub.db.seed`（手動 Skill 2件＋空 Repository 1件・冪等）を順に流すだけのラッパ。個別に流したい場合は `uv run alembic upgrade head` / `uv run python -m skillshub.db.seed` を直接実行してもよい。staging では同じ `migrate.sh` を Cloud Run Job のコマンドとして使う。手動 Skill 2件は架空のデモデータのため、本番・staging では環境変数 `SEED_DEMO_SKILLS=0` を設定して投入をスキップする（「初期状態に戻す」ボタン経由の再シードにも同じガードが効く）。
 
 ### 接続確認
 
@@ -29,6 +29,14 @@ uv run python -c "from skillshub.shared.db import get_session; s=next(get_sessio
 ```
 
 `DB OK` が出力されればローカル DB への接続成功。
+
+### Gemini の認証
+
+LLM・埋め込みの呼び出しは google-genai SDK 経由で、認証は環境変数で切り替わる。ローカルでは `.env` に `GOOGLE_API_KEY`（Gemini API キー）を設定するのが手軽。デプロイ環境では API キーを使わず、`GOOGLE_GENAI_USE_VERTEXAI=TRUE`・`GOOGLE_CLOUD_PROJECT`・`GOOGLE_CLOUD_LOCATION` を設定してサービスアカウントの ADC で Vertex AI を呼ぶ。
+
+### 公開デプロイ時のアクセス制限
+
+Cloud Run に `--allow-unauthenticated` でデプロイすると URL を知っていれば誰でも操作できるため、アプリ側に簡易パスワードゲートを備えている。環境変数 `APP_PASSWORD` を設定するとアプリ表示前にパスワード入力を求める（未設定のローカル開発ではゲートは出ない）。デプロイ時は Secret Manager に登録し、`--set-secrets=APP_PASSWORD=app-password:latest` のように環境変数として渡す。
 
 ### スキーマ／マイグレーション
 

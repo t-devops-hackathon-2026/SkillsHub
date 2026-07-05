@@ -20,7 +20,7 @@ from google.genai import types
 
 from skillshub.shared.schemas import AnalyzedSkill, RawSkill, UpdateDraft
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3-flash"
 
 _APP_NAME = "skillshub-librarian"
 _USER_ID = "librarian"

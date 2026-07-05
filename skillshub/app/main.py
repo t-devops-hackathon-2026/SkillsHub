@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -11,6 +13,41 @@ from skillshub.app.views.components import inject_github_style
 from skillshub.shared import services
 
 _SAMPLES_ROOT = Path(__file__).resolve().parents[2] / "samples"
+
+
+def _check_password() -> bool:
+    """公開デプロイ向けの簡易パスワードゲート。
+
+    ``APP_PASSWORD`` が未設定（ローカル開発）ならゲートを出さず素通しする。
+    デプロイ環境では Secret Manager の値を ``--set-secrets`` で env として渡す想定。
+    """
+    expected = os.environ.get("APP_PASSWORD")
+    if not expected:
+        return True
+    if st.session_state.get("password_verified"):
+        return True
+
+    _, center, _ = st.columns([1, 1.1, 1])
+    with center:
+        st.markdown(
+            '<div class="sh-login-head">'
+            '<span class="sh-mark">S</span>'
+            '<div class="sh-login-title">SkillsHub にログイン</div>'
+            '<div class="sh-login-sub">パスワードを入力してください</div>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        # st.form 自体には key クラスが付かないため、CSS で狙えるよう keyed container で包む。
+        with st.container(key="login_card"), st.form("password_gate"):
+            entered = st.text_input("パスワード", type="password")
+            submitted = st.form_submit_button("ログイン", type="primary", use_container_width=True)
+        if submitted:
+            # str のまま比較すると非 ASCII 入力で TypeError になるため bytes で比較する。
+            if hmac.compare_digest(entered.encode(), expected.encode()):
+                st.session_state.password_verified = True
+                st.rerun()
+            st.error("パスワードが違います")
+    return False
 
 
 def _init_session_state() -> None:
@@ -92,7 +129,18 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
 
     ok = 0
     failed = 0
-    with st.status("エージェントが同期中…", expanded=True) as status:
+    total = len(repositories)
+    done = 0
+    with st.status(f"エージェントが同期中… (0/{total} 同期元)", expanded=True) as status:
+        bar = st.progress(0.0)
+
+        def _step_done() -> None:
+            """同期元 1 エントリの処理完了ごとに進捗バーとラベルを進める。"""
+            nonlocal done
+            done += 1
+            bar.progress(done / total)
+            status.update(label=f"エージェントが同期中… ({done}/{total} 同期元)")
+
         # Organization 登録（repo=""）を先に一括収集し、配下リポジトリの二重収集を避ける。
         synced_ids: set[str] = set()
         for r in repositories:
@@ -110,15 +158,20 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
             except Exception as exc:  # noqa: BLE001 — 1 Org の失敗で他の同期元を止めない
                 failed += 1
                 st.write(f"{owner} の収集に失敗しました: {exc}")
+            _step_done()
 
         for r in repositories:
-            if not r["repo"] or str(r["id"]) in synced_ids:
+            if not r["repo"]:
+                continue  # Organization は上のループで処理済み
+            if str(r["id"]) in synced_ids:
+                _step_done()  # Organization 一括収集でカバー済みのエントリ
                 continue
             name = f"{r['owner']}/{r['repo']}"
             # 擬似 owner（services.PSEUDO_OWNERS）のうち local はローカル samples を収集し、
             # それ以外（手動登録 Skill の置き場）は GitHub に実在しないため同期しない。
             if r["owner"] != services.LOCAL_OWNER and r["owner"] in services.PSEUDO_OWNERS:
                 st.write(f"{name} は手動登録 Skill の置き場のためスキップしました")
+                _step_done()
                 continue
             st.write(f"{name} を収集しています…")
             try:
@@ -130,6 +183,7 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
             except Exception as exc:  # noqa: BLE001 — 1 リポジトリの失敗で他リポジトリを止めない
                 failed += 1
                 st.write(f"{name} の収集に失敗しました: {exc}")
+            _step_done()
         status.update(
             label=f"同期完了 — 成功 {ok} 件 / 失敗 {failed} 件",
             state="error" if failed else "complete",
@@ -174,6 +228,7 @@ def _render_content() -> None:
 
 st.set_page_config(page_title="SkillsHub", page_icon=":material/local_library:", layout="wide")
 inject_github_style()
-_init_session_state()
-_render_sidebar()
-_render_content()
+if _check_password():
+    _init_session_state()
+    _render_sidebar()
+    _render_content()

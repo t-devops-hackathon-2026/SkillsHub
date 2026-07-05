@@ -2,7 +2,7 @@
 
 仕様の正は docs/designs/step1/step1.md「重複・類似検出」。
 
-    SKILL.md 本文 → Vertex AI で 768 次元ベクトル化 → skill_embeddings に upsert
+    SKILL.md 本文 → Gemini 埋め込みモデルで 768 次元ベクトル化 → skill_embeddings に upsert
     → pgvector cosine 近傍探索（similarity = 1 - cosine_distance）
     → しきい値（既定 0.88, env DEDUP_THRESHOLD）以上を重複候補とし merge 提案を生成
 
@@ -17,9 +17,11 @@ CLI 動作確認:
 from __future__ import annotations
 
 import json
+import math
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import lru_cache
 from uuid import UUID
 
 from sqlalchemy import select
@@ -31,11 +33,15 @@ from skillshub.shared.schemas import ComposeSuggestion, SuggestionType
 
 # ── 定数・型 ────────────────────────────────────────────
 
-# 日英混在対応の多言語埋め込みモデル（768 次元）。
-EMBEDDING_MODEL = "text-multilingual-embedding-002"
+# 日英混在対応の多言語埋め込みモデル。既定次元は 3072 だが、DB スキーマ（vector(768)）に
+# 合わせて output_dimensionality=768 で切り詰めて使う（embed_text 参照）。
+EMBEDDING_MODEL = "gemini-embedding-001"
+
+# DB の skill_embeddings.embedding（vector(768)）に合わせた埋め込み次元数。
+EMBEDDING_DIM = 768
 
 # 検索の推薦理由（why）生成に使う既定モデル。仕様の「Flash 既定 / 重い推論のみ Pro」に従い Flash。
-SEARCH_REASON_MODEL = "gemini-2.5-flash"
+SEARCH_REASON_MODEL = "gemini-3-flash"
 
 # テキスト → ベクトルの関数型。既定は Vertex AI だが、テストでは決定論的な
 # フェイクを差し込めるように注入可能にしておく（dependency injection）。
@@ -59,27 +65,43 @@ def build_skill_embedding_input(skill: Skill) -> str:
     return "\n".join(p for p in parts if p)
 
 
-# ── 埋め込み生成（Vertex AI）────────────────────────────
+# ── 埋め込み生成（Gemini API / Vertex AI）───────────────
+
+
+@lru_cache(maxsize=1)
+def get_genai_client():  # type: ignore[no-untyped-def]
+    """google-genai クライアントを生成する（プロセス内で 1 個を使い回す）。
+
+    認証・接続先は環境変数で決まる: ``GOOGLE_API_KEY``（Gemini API 直、ローカル向け）
+    または ``GOOGLE_GENAI_USE_VERTEXAI=TRUE`` ＋ ``GOOGLE_CLOUD_PROJECT`` ＋
+    ``GOOGLE_CLOUD_LOCATION``（Vertex AI 経由・ADC 認証、デプロイ環境向け）。
+    """
+    from google import genai
+
+    return genai.Client()
 
 
 def embed_text(text: str, model: str = EMBEDDING_MODEL) -> list[float]:
-    """Vertex AI でテキストを 768 次元ベクトルに変換する（既定の埋め込み実装）。
+    """Gemini 埋め込みモデルでテキストを 768 次元ベクトルに変換する（既定の埋め込み実装）。
 
-    ``google-cloud-aiplatform`` は関数内で遅延 import する。GCP 認証が無い環境
+    ``google-genai`` は関数内で遅延 import する。Gemini 認証が無い環境
     （ローカルテスト等）では本関数を呼ばず ``EmbeddingFn`` のフェイクを注入する。
+
+    gemini-embedding-001 は 3072 未満に切り詰めたベクトルを正規化しないため、
+    cosine 類似度の前提を揃えるよう単位ベクトル化してから返す。
     """
-    import os
+    from google.genai import types
 
-    import vertexai
-    from vertexai.language_models import TextEmbeddingModel
-
-    project = os.environ.get("GOOGLE_CLOUD_PROJECT")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "asia-northeast1")
-    vertexai.init(project=project, location=location)
-
-    embedding_model = TextEmbeddingModel.from_pretrained(model)
-    embeddings = embedding_model.get_embeddings([text])
-    return list(embeddings[0].values)
+    result = get_genai_client().models.embed_content(
+        model=model,
+        contents=text,
+        config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
+    )
+    values = list(result.embeddings[0].values)
+    norm = math.sqrt(sum(v * v for v in values))
+    if norm == 0.0:
+        return values
+    return [v / norm for v in values]
 
 
 # ── 埋め込みの永続化 ────────────────────────────────────
@@ -157,10 +179,10 @@ def generate_search_reasons(query: str, skills: list[Skill], model: str = SEARCH
     """各候補 Skill について、クエリに対する推薦理由（why）を Gemini Flash で生成する。
 
     候補をまとめて 1 回の呼び出しで処理し、入力と同順・同数の理由リストを返す。
-    ``vertexai`` は関数内で遅延 import する（GCP 認証が無い環境では本関数を呼ばない）。
+    ``google-genai`` は関数内で遅延 import する（Gemini 認証が無い環境では本関数を呼ばない）。
     呼び出し側（``run_searcher``）は本関数が失敗した場合テンプレートにフォールバックする。
     """
-    from vertexai.generative_models import GenerationConfig, GenerativeModel
+    from google.genai import types
 
     numbered = "\n".join(f"{i}. 名前: {s.name} / 説明: {s.description}" for i, s in enumerate(skills))
     prompt = (
@@ -175,9 +197,10 @@ def generate_search_reasons(query: str, skills: list[Skill], model: str = SEARCH
         "properties": {"reasons": {"type": "array", "items": {"type": "string"}}},
         "required": ["reasons"],
     }
-    response = GenerativeModel(model).generate_content(
-        prompt,
-        generation_config=GenerationConfig(
+    response = get_genai_client().models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=schema,
             temperature=0.2,
