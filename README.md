@@ -114,7 +114,7 @@ gcloud run jobs execute migrate --region="$REGION" --wait
 ### 3. Streamlit サービス
 
 ```bash
-gcloud run deploy skillhub \
+gcloud run deploy skillshub \
   --image="$IMAGE" \
   --region="$REGION" \
   --command=./scripts/serve.sh \
@@ -160,7 +160,7 @@ Cloud Run は `:latest` タグをデプロイ時点の digest に固定するた
 ```bash
 gcloud run jobs update migrate --image="$IMAGE" --region="$REGION"
 gcloud run jobs execute migrate --region="$REGION" --wait
-gcloud run services update skillhub --image="$IMAGE" --region="$REGION"
+gcloud run services update skillshub --image="$IMAGE" --region="$REGION"
 gcloud run jobs update librarian --image="$IMAGE" --region="$REGION"
 ```
 
