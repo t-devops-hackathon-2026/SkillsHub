@@ -12,9 +12,9 @@ steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
-      - --tag=asia-northeast1-docker.pkg.dev/$PROJECT_ID/skillhub/app:latest
+      - --tag=asia-northeast1-docker.pkg.dev/$PROJECT_ID/skillshub/app:latest
       - .
 images:
-  - asia-northeast1-docker.pkg.dev/$PROJECT_ID/skillhub/app:latest
+  - asia-northeast1-docker.pkg.dev/$PROJECT_ID/skillshub/app:latest
 options:
   logging: CLOUD_LOGGING_ONLY

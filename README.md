@@ -61,12 +61,16 @@ uv run alembic upgrade head
 
 ### 前提（一度だけ）
 
-Cloud SQL（private IP）・Artifact Registry リポジトリ `skillhub`・サービスアカウント（`streamlit-sa` / `librarian-sa`）・VPC コネクタ `skillshub-connector` は #10 で作成済みであること。Secret Manager には次の4つを登録しておく: `DATABASE_URL`（private IP 向け接続文字列）、`app-password`（画面のパスワードゲート用）、`github-app-id`、`github-app-private-key`。
+Cloud SQL（private IP）・Artifact Registry リポジトリ `skillshub`・サービスアカウント（`streamlit-sa` / `librarian-sa`）・VPC コネクタ `skillshub-conn` は #10 で作成済みであること。Secret Manager には次の4つを登録しておく: `DATABASE_URL`（private IP 向け接続文字列。SQLAlchemy が psycopg v3 を使うよう `postgresql+psycopg://` 形式で登録する）、`app-password`（画面のパスワードゲート用）、`github-app-id`、`github-app-private-key`。未登録のものは次の要領で登録する:
+
+```bash
+printf '%s' '画面ゲート用のパスワード' | gcloud secrets create app-password --data-file=-
+```
 
 ```bash
 PROJECT_ID=$(gcloud config get-value project)
 REGION=asia-northeast1
-IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/skillhub/app:latest
+IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/skillshub/app:latest
 
 # API 有効化
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
@@ -98,7 +102,7 @@ gcloud run jobs create migrate \
   --image="$IMAGE" \
   --region="$REGION" \
   --service-account="librarian-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --vpc-connector=skillshub-connector \
+  --vpc-connector=skillshub-conn \
   --set-secrets=DATABASE_URL=DATABASE_URL:latest \
   --set-env-vars=SEED_DEMO_SKILLS=0
 
@@ -115,15 +119,16 @@ gcloud run deploy skillhub \
   --region="$REGION" \
   --command=./scripts/serve.sh \
   --service-account="streamlit-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --vpc-connector=skillshub-connector \
+  --vpc-connector=skillshub-conn \
   --set-secrets=DATABASE_URL=DATABASE_URL:latest,APP_PASSWORD=app-password:latest,GITHUB_APP_ID=github-app-id:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest \
   --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION=global,SEED_DEMO_SKILLS=0 \
   --allow-unauthenticated \
   --min-instances=0 --max-instances=1 \
+  --timeout=3600 \
   --memory=1Gi
 ```
 
-`--allow-unauthenticated` で URL は公開になるが、アプリ側のパスワードゲート（`APP_PASSWORD`）で操作を保護する。`--max-instances=1` は Streamlit のセッションがインスタンスローカルなことへの対策（スケールアウトさせない）。サービス側にも `SEED_DEMO_SKILLS=0` を渡すのは、「初期状態に戻す」ボタンが再シードを呼ぶため。
+`--allow-unauthenticated` で URL は公開になるが、アプリ側のパスワードゲート（`APP_PASSWORD`）で操作を保護する。`--max-instances=1` は Streamlit のセッションがインスタンスローカルなことへの対策（スケールアウトさせない）。`--timeout=3600` は Streamlit のセッション接続（WebSocket）が既定の 300 秒で切断されるのを避けるため。サービス側にも `SEED_DEMO_SKILLS=0` を渡すのは、「初期状態に戻す」ボタンが再シードを呼ぶため。
 
 ### 4. 司書 Job（収集バッチ）
 
@@ -134,15 +139,15 @@ gcloud run jobs create librarian \
   --command=python \
   --args=-m,skillshub.batch.run_collect \
   --service-account="librarian-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-  --vpc-connector=skillshub-connector \
+  --vpc-connector=skillshub-conn \
   --set-secrets=DATABASE_URL=DATABASE_URL:latest,GITHUB_APP_ID=github-app-id:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest \
-  --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION=global \
+  --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION=global,SEED_DEMO_SKILLS=0 \
   --task-timeout=30m
 
 gcloud run jobs execute librarian --region="$REGION" --wait
 ```
 
-日次の自動実行（Cloud Scheduler からのキック）は #23 で設定する。
+司書 Job にも `SEED_DEMO_SKILLS=0` を渡すのは、DB 巡回モードがローカル完走用に自動登録する `local/samples`（イメージ同梱のデモ Skill）を本番に取り込まないため。日次の自動実行（Cloud Scheduler からのキック）は #23 で設定する。
 
 ### 5. 動作確認
 
@@ -150,12 +155,13 @@ gcloud run jobs execute librarian --region="$REGION" --wait
 
 ### イメージ更新時の注意
 
-Cloud Run は `:latest` タグをデプロイ時点の digest に固定するため、新しいイメージをビルドしただけでは反映されない。ビルド後に次を流して新リビジョン／新実行に切り替える:
+Cloud Run は `:latest` タグをデプロイ時点の digest に固定するため、新しいイメージをビルドしただけでは反映されない。ビルド後に次を流して新リビジョン／新実行に切り替える。スキーマ変更を含む更新でサービスが旧スキーマの DB を掴まないよう、migrate を先に更新・実行してからサービスを切り替えること:
 
 ```bash
+gcloud run jobs update migrate --image="$IMAGE" --region="$REGION"
+gcloud run jobs execute migrate --region="$REGION" --wait
 gcloud run services update skillhub --image="$IMAGE" --region="$REGION"
 gcloud run jobs update librarian --image="$IMAGE" --region="$REGION"
-gcloud run jobs update migrate --image="$IMAGE" --region="$REGION"
 ```
 
 ---
