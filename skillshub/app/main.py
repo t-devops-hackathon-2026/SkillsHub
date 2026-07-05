@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from skillshub.app.views import dashboard, detail, repos, search, suggestions
 from skillshub.app.views.components import inject_github_style
@@ -14,17 +17,62 @@ from skillshub.shared import services
 
 _SAMPLES_ROOT = Path(__file__).resolve().parents[2] / "samples"
 
+# ログイン維持クッキー。値はパスワードではなく「有効期限.HMAC署名」の署名付きトークンで、
+# 署名鍵を APP_PASSWORD から導出しているため、パスワードを変えると発行済みトークンは全て失効する。
+_AUTH_COOKIE = "skillshub_auth"
+_AUTH_TTL_SECONDS = 7 * 24 * 60 * 60  # 7日
+
+
+def _auth_signature(expected: str, exp: int) -> str:
+    key = hashlib.sha256(f"{_AUTH_COOKIE}:{expected}".encode()).digest()
+    return hmac.new(key, str(exp).encode(), hashlib.sha256).hexdigest()
+
+
+def _auth_cookie_valid(expected: str) -> bool:
+    """ログイン維持クッキーが有効期限内かつ署名一致ならログイン済みとみなす。"""
+    token = st.context.cookies.get(_AUTH_COOKIE, "")
+    exp_str, _, sig = token.partition(".")
+    if not (exp_str.isdigit() and sig):
+        return False
+    if int(exp_str) < time.time():
+        return False
+    return hmac.compare_digest(sig, _auth_signature(expected, int(exp_str)))
+
+
+def _issue_auth_cookie(expected: str) -> None:
+    """ブラウザにログイン維持クッキーを書き込む。
+
+    Streamlit にクッキーを書く公式 API が無いため、高さ 0 の component で JS を
+    1 行実行して書く（読み取り側は公式の ``st.context.cookies`` を使う）。
+    """
+    exp = int(time.time()) + _AUTH_TTL_SECONDS
+    token = f"{exp}.{_auth_signature(expected, exp)}"
+    components.html(
+        f"<script>document.cookie = '{_AUTH_COOKIE}={token}; "
+        f"max-age={_AUTH_TTL_SECONDS}; path=/; secure; samesite=lax';</script>",
+        height=0,
+    )
+
 
 def _check_password() -> bool:
     """公開デプロイ向けの簡易パスワードゲート。
 
     ``APP_PASSWORD`` が未設定（ローカル開発）ならゲートを出さず素通しする。
     デプロイ環境では Secret Manager の値を ``--set-secrets`` で env として渡す想定。
+    一度突破すると署名付きクッキーにより ``_AUTH_TTL_SECONDS`` の間はリロードや
+    タブの開き直しでも再入力を求めない。
     """
     expected = os.environ.get("APP_PASSWORD")
     if not expected:
         return True
     if st.session_state.get("password_verified"):
+        # ログイン直後の再実行時に一度だけクッキーを発行する。フォーム送信と同じ実行内で
+        # 発行すると直後の st.rerun() で component が描画されず、クッキーが書かれないため。
+        if st.session_state.pop("pending_auth_cookie", False):
+            _issue_auth_cookie(expected)
+        return True
+    if _auth_cookie_valid(expected):
+        st.session_state.password_verified = True
         return True
 
     _, center, _ = st.columns([1, 1.1, 1])
@@ -45,6 +93,7 @@ def _check_password() -> bool:
             # str のまま比較すると非 ASCII 入力で TypeError になるため bytes で比較する。
             if hmac.compare_digest(entered.encode(), expected.encode()):
                 st.session_state.password_verified = True
+                st.session_state.pending_auth_cookie = True
                 st.rerun()
             st.error("パスワードが違います")
     return False
