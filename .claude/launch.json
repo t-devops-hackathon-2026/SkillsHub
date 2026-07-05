@@ -10,7 +10,7 @@
     {
       "name": "skillshub",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "DATABASE_URL='postgresql+psycopg://skillhub_user:password@127.0.0.1:5433/skillhub' uv run streamlit run skillshub/app/main.py --server.port 8501 --server.headless true"],
+      "runtimeArgs": ["-c", "DATABASE_URL='postgresql+psycopg://skillshub_user:password@127.0.0.1:5433/skillshub' uv run streamlit run skillshub/app/main.py --server.port 8501 --server.headless true"],
       "port": 8501
     }
   ]

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 
 import streamlit as st
 
+from skillshub.app.views.components import to_jst
 from skillshub.shared import services
 
 _MSG_KEY = "repos_flash_message"
 _GO_DASH_KEY = "repos_go_dashboard"
-_PENDING_COLLECT = "repos_pending_collect"  # 登録直後の「今すぐ収集」待ち
 
 
 @dataclass
@@ -48,7 +49,7 @@ _KIND_REPO_BADGE = (
 )
 
 _COL_WIDTHS = [3.5, 1, 2, 0.8, 1.5, 1.2]
-_COL_HEADERS = ["対象", "種別", "最終収集", "Skills", "状態", ""]
+_COL_HEADERS = ["対象", "種別", "最終収集", "Skills 数", "状態", ""]
 
 
 def _set_flash(level: str, text: str, go_dashboard: bool = False) -> None:
@@ -85,7 +86,7 @@ def _start_sync(repo_id: str, display_name: str, kind: str, owner: str) -> None:
 def _finish_job(job: _SyncJob) -> None:
     """完了したジョブの結果からフラッシュメッセージをセットする。"""
     if job.error is not None:
-        _set_flash("error", f"`{job.display_name}` の収集に失敗しました。\n{job.error}")
+        _set_flash("error", f"**{job.display_name}** の収集に失敗しました。\n{job.error}")
         return
 
     if job.kind == "org":
@@ -94,14 +95,14 @@ def _finish_job(job: _SyncJob) -> None:
         if result.failed_repos:
             _set_flash(
                 "warning",
-                f"`{job.owner}` の収集が一部失敗しました。"
+                f"**{job.owner}** の収集が一部失敗しました。"
                 f"　取得: {result.collected_skills} 件　／　失敗: {', '.join(result.failed_repos)}",
                 go_dashboard=True,
             )
         else:
             _set_flash(
                 "success",
-                f"`{job.owner}` Org の収集が完了しました。"
+                f"**{job.owner}** Org の収集が完了しました。"
                 f"　取得: {result.collected_skills} 件　／　スキップ: {result.skipped_skills} 件",
                 go_dashboard=True,
             )
@@ -110,7 +111,7 @@ def _finish_job(job: _SyncJob) -> None:
         assert isinstance(result_repo, dict)
         _set_flash(
             "success",
-            f"`{job.display_name}` の収集が完了しました。"
+            f"**{job.display_name}** の収集が完了しました。"
             f"　取得: {result_repo['collected_skills']} 件　／　スキップ: {result_repo['skipped_skills']} 件",
             go_dashboard=True,
         )
@@ -138,18 +139,6 @@ def _render_flash() -> None:
     if msg is not None:
         getattr(st, msg["level"])(msg["text"])
 
-    # 登録直後: 「今すぐ収集」ボタンをクリックされるまで表示し続ける
-    pending = st.session_state.get(_PENDING_COLLECT)
-    if pending:
-        col_btn, col_skip, _ = st.columns([1.5, 1, 5])
-        if col_btn.button("今すぐ収集", type="primary", key="collect_after_register_btn"):
-            st.session_state.pop(_PENDING_COLLECT, None)
-            _start_sync(pending["repo_id"], pending["display_name"], pending["kind"], pending["owner"])
-            st.rerun()
-        if col_skip.button("あとで", key="skip_collect_btn"):
-            st.session_state.pop(_PENDING_COLLECT, None)
-            st.rerun()
-
     # 収集完了後: 「ダッシュボードで確認」ボタンをクリックされるまで表示し続ける
     if st.session_state.get(_GO_DASH_KEY) and st.button("ダッシュボードで確認 →", type="primary", key="go_dash_btn"):
         st.session_state.pop(_GO_DASH_KEY, None)
@@ -161,15 +150,38 @@ def _kind(repo: str) -> str:
     return "org" if not repo else "repo"
 
 
-@st.cache_data(ttl=300, show_spinner="エージェントの閲覧範囲を取得中…")
+_SCOPE_TTL_SECONDS = 300
+# _github_scope の中身（GitHub API 取得）が最後に実行された時刻。キャッシュが冷えている
+# （＝次の取得が数秒ブロックする）かを cache_data の外から判定し、冷えている時だけ
+# ローディングオーバーレイを出すために持つ。
+_scope_warmed_at = 0.0
+
+_LOADING_OVERLAY_HTML = (
+    '<div class="sh-loading-overlay"><div class="sh-loading-panel">'
+    '<div class="sh-loading-spinner"></div>'
+    '<div class="sh-loading-text">エージェントの閲覧範囲を取得中…</div>'
+    "</div></div>"
+)
+
+
+@st.cache_data(ttl=_SCOPE_TTL_SECONDS, show_spinner=False)
 def _github_scope() -> dict[str, list[str]]:
     """App の閲覧範囲（選択肢）。GitHub API を毎リロードで叩かないよう短時間キャッシュする。
 
     ``persist="disk"`` は併用しない。Streamlit は persist 指定時に ttl を無視するため、
     キャッシュが永久に残り、新しく作られたリポジトリが候補に出てこなくなる。
-    代償として起動直後の初回表示は取得スピナー（数秒）でブロックされる。
+    代償として初回表示は取得（数秒）でブロックされる。この間は render() が全画面の
+    ローディングオーバーレイを出し、前画面の stale 要素が透けて見えないようにする。
     """
-    return services.list_github_scope()
+    global _scope_warmed_at
+    scope = services.list_github_scope()
+    _scope_warmed_at = time.time()
+    return scope
+
+
+def _scope_cache_cold() -> bool:
+    """スコープのキャッシュが切れていて、次の取得が数秒ブロックしそうか。"""
+    return time.time() - _scope_warmed_at >= _SCOPE_TTL_SECONDS
 
 
 def _load_scope() -> dict[str, list[str]] | None:
@@ -265,16 +277,10 @@ def _render_register_form() -> None:
         owner, repo = parts[0].strip(), parts[1].strip()
 
     try:
-        repo_id = services.get_or_create_repository(owner, repo)
+        services.get_or_create_repository(owner, repo)
         display_name = owner if is_org else f"{owner}/{repo}"
-        # 登録成功 → 「今すぐ収集」待ち状態をセット
-        st.session_state[_PENDING_COLLECT] = {
-            "repo_id": str(repo_id),
-            "display_name": display_name,
-            "kind": "org" if is_org else "repo",
-            "owner": owner,
-        }
-        _set_flash("success", f"`{display_name}` を登録しました。")
+        # 収集は一覧の各行「今すぐ収集」またはサイドバーの「今すぐ同期」から実行する
+        _set_flash("success", f"**{display_name}** を登録しました。")
         st.rerun()
     except Exception as exc:
         st.error(f"登録に失敗しました: {exc}")
@@ -308,12 +314,15 @@ def _render_repo_table() -> None:
     st.markdown(f"**登録済み（{len(repos)} 件）**")
     st.write("")
 
-    header_cols = st.columns(_COL_WIDTHS)
-    for col, label in zip(header_cols, _COL_HEADERS, strict=False):
-        col.markdown(
-            f'<span style="color:#59636e;font-size:12px;font-weight:600">{label}</span>',
-            unsafe_allow_html=True,
-        )
+    # データ行はカード（border 1px + padding 1rem）の中に描画されるため、ヘッダー行にも
+    # 同じ水平オフセットを CSS（st-key-repo_table_header）で与えて桁位置を揃える。
+    with st.container(key="repo_table_header"):
+        header_cols = st.columns(_COL_WIDTHS)
+        for col, label in zip(header_cols, _COL_HEADERS, strict=False):
+            col.markdown(
+                f'<span style="color:#59636e;font-size:12px;font-weight:600;white-space:nowrap">{label}</span>',
+                unsafe_allow_html=True,
+            )
 
     last_by_owner, skills_by_owner = _org_rollup(repos)
 
@@ -336,7 +345,7 @@ def _render_repo_table() -> None:
 
         clicked = False
         with st.container(border=True, key=f"repo_box_{repo_id}"):
-            last_str = last_at.strftime("%Y-%m-%d %H:%M") if last_at else "未収集"
+            last_str = to_jst(last_at).strftime("%Y-%m-%d %H:%M") if last_at else "未収集"
             badge = _KIND_ORG_BADGE if kind == "org" else _KIND_REPO_BADGE
             status_html = (
                 '<span style="color:#1f883d;font-weight:600">● 正常</span>'
@@ -380,10 +389,18 @@ def render() -> None:
 
         _render_flash()
 
+        # スコープ取得で数秒ブロックする間、前画面の stale 要素が透けて見えると
+        # バグのように映るため、メイン領域をオーバーレイで覆って読み込み中を明示する
+        # （サイドバーは見せたまま残す）。キャッシュが温かい時は出さず、ちらつきを避ける。
+        overlay = st.empty()
+        if services.github_app_configured() and _scope_cache_cold():
+            overlay.markdown(_LOADING_OVERLAY_HTML, unsafe_allow_html=True)
+
         with st.container(border=True):
             st.markdown("**新規登録**")
             st.write("")
             _render_register_form()
+        overlay.empty()
 
         st.write("")
         _render_repo_table()
