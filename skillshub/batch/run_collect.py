@@ -25,6 +25,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from skillshub.db.seed import _should_seed_demo_skills
 from skillshub.shared import services
 from skillshub.shared.agents.librarian import run_librarian_for_repo
 from skillshub.shared.db import session_scope as _session_scope
@@ -147,7 +148,10 @@ def main(
         failed_repos = 0
     else:
         # DB 巡回モード: 引数なし（定期バッチ）でもローカル完走できるよう local/samples を用意する。
-        if repo_uuid is None:
+        # samples/ はイメージにも同梱されるため、本番・staging では seed と同じガード
+        # （SEED_DEMO_SKILLS=0）で登録をスキップする。ガード無しだと日次実行のたびに
+        # 架空のデモ Skill が本番 DB に取り込まれてしまう。
+        if repo_uuid is None and _should_seed_demo_skills():
             services.get_or_create_repository(_LOCAL_OWNER, _LOCAL_REPO)
         targets, failed_repos = _expand_db_targets(_target_repos(repo_uuid))
 

@@ -32,7 +32,7 @@ uv run python -c "from skillshub.shared.db import get_session; s=next(get_sessio
 
 ### Gemini の認証
 
-LLM・埋め込みの呼び出しは google-genai SDK 経由で、認証は環境変数で切り替わる。ローカルでは `.env` に `GOOGLE_API_KEY`（Gemini API キー）を設定するのが手軽。デプロイ環境では API キーを使わず、`GOOGLE_GENAI_USE_VERTEXAI=TRUE`・`GOOGLE_CLOUD_PROJECT`・`GOOGLE_CLOUD_LOCATION` を設定してサービスアカウントの ADC で Vertex AI を呼ぶ。
+LLM・埋め込みの呼び出しは google-genai SDK 経由で、認証は環境変数で切り替わる。ローカルでは `.env` に `GOOGLE_API_KEY`（Gemini API キー）を設定するのが手軽。デプロイ環境では API キーを使わず、`GOOGLE_GENAI_USE_VERTEXAI=TRUE`・`GOOGLE_CLOUD_PROJECT`・`GOOGLE_CLOUD_LOCATION` を設定してサービスアカウントの ADC で Vertex AI を呼ぶ。`GOOGLE_CLOUD_LOCATION` は `global` を指定する（Gemini 3 系モデルは global エンドポイントのみの提供で、asia-northeast1 等のリージョン指定では 404 になるため）。
 
 ### 公開デプロイ時のアクセス制限
 
@@ -52,6 +52,117 @@ uv run alembic upgrade head
 
 - 作り直したいとき: `docker compose down -v && docker compose up -d` でボリュームごと初期化し、`./scripts/migrate.sh` を再実行する。
 - staging（Cloud SQL / private IP）への適用は、同じ `migrate.sh` を `Dockerfile` でイメージ化し、VPC コネクタ付きの Cloud Run Job として流す（public IP 開放は不要）。
+
+---
+
+## デプロイ（Cloud Run）
+
+構成の正は [overview.md「インフラ構成（デプロイ）」](docs/designs/overview/overview.md)。イメージは1本（[`Dockerfile`](Dockerfile)、[`cloudbuild.yaml`](cloudbuild.yaml) でビルド）を Cloud Run サービス（Streamlit）・司書 Job・マイグレーション Job で共用し、起動コマンドだけを変える。以下を上から順に流せば再現できる。
+
+### 前提（一度だけ）
+
+Cloud SQL（private IP）・Artifact Registry リポジトリ `skillshub`・サービスアカウント（`streamlit-sa` / `librarian-sa`）・VPC コネクタ `skillshub-conn` は #10 で作成済みであること。Secret Manager には次の4つを登録しておく: `DATABASE_URL`（private IP 向け接続文字列。SQLAlchemy が psycopg v3 を使うよう `postgresql+psycopg://` 形式で登録する）、`app-password`（画面のパスワードゲート用）、`github-app-id`、`github-app-private-key`。未登録のものは次の要領で登録する:
+
+```bash
+printf '%s' '画面ゲート用のパスワード' | gcloud secrets create app-password --data-file=-
+```
+
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+REGION=asia-northeast1
+IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/skillshub/app:latest
+
+# API 有効化
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+  aiplatform.googleapis.com secretmanager.googleapis.com
+
+# 実行 SA に Vertex AI 呼び出しと Secret 参照の権限を付与
+for SA in streamlit-sa librarian-sa; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:$SA@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/aiplatform.user"
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:$SA@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+done
+```
+
+### 1. イメージのビルド
+
+```bash
+gcloud builds submit --config cloudbuild.yaml
+```
+
+main への push で自動ビルドしたい場合は、Cloud Build の GitHub トリガー（構成ファイル: `cloudbuild.yaml`）を作成する。タグは `latest` のみの運用。
+
+### 2. マイグレーション Job（スキーマ適用＋seed）
+
+```bash
+gcloud run jobs create migrate \
+  --image="$IMAGE" \
+  --region="$REGION" \
+  --service-account="librarian-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --vpc-connector=skillshub-conn \
+  --set-secrets=DATABASE_URL=DATABASE_URL:latest \
+  --set-env-vars=SEED_DEMO_SKILLS=0
+
+gcloud run jobs execute migrate --region="$REGION" --wait
+```
+
+`SEED_DEMO_SKILLS=0` は架空のデモ Skill（alice / bob）を本番に入れないためのガード。
+
+### 3. Streamlit サービス
+
+```bash
+gcloud run deploy skillhub \
+  --image="$IMAGE" \
+  --region="$REGION" \
+  --command=./scripts/serve.sh \
+  --service-account="streamlit-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --vpc-connector=skillshub-conn \
+  --set-secrets=DATABASE_URL=DATABASE_URL:latest,APP_PASSWORD=app-password:latest,GITHUB_APP_ID=github-app-id:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest \
+  --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION=global,SEED_DEMO_SKILLS=0 \
+  --allow-unauthenticated \
+  --min-instances=0 --max-instances=1 \
+  --timeout=3600 \
+  --memory=1Gi
+```
+
+`--allow-unauthenticated` で URL は公開になるが、アプリ側のパスワードゲート（`APP_PASSWORD`）で操作を保護する。`--max-instances=1` は Streamlit のセッションがインスタンスローカルなことへの対策（スケールアウトさせない）。`--timeout=3600` は Streamlit のセッション接続（WebSocket）が既定の 300 秒で切断されるのを避けるため。サービス側にも `SEED_DEMO_SKILLS=0` を渡すのは、「初期状態に戻す」ボタンが再シードを呼ぶため。
+
+### 4. 司書 Job（収集バッチ）
+
+```bash
+gcloud run jobs create librarian \
+  --image="$IMAGE" \
+  --region="$REGION" \
+  --command=python \
+  --args=-m,skillshub.batch.run_collect \
+  --service-account="librarian-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --vpc-connector=skillshub-conn \
+  --set-secrets=DATABASE_URL=DATABASE_URL:latest,GITHUB_APP_ID=github-app-id:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest \
+  --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION=global,SEED_DEMO_SKILLS=0 \
+  --task-timeout=30m
+
+gcloud run jobs execute librarian --region="$REGION" --wait
+```
+
+司書 Job にも `SEED_DEMO_SKILLS=0` を渡すのは、DB 巡回モードがローカル完走用に自動登録する `local/samples`（イメージ同梱のデモ Skill）を本番に取り込まないため。日次の自動実行（Cloud Scheduler からのキック）は #23 で設定する。
+
+### 5. 動作確認
+
+サービス URL をブラウザで開き、パスワードゲート → ダッシュボード表示を確認する。画面から収集元を追加して「今すぐ同期」を実行するか、`librarian` Job を手動 execute して、収集された Skill がダッシュボードに並べば疎通完了。
+
+### イメージ更新時の注意
+
+Cloud Run は `:latest` タグをデプロイ時点の digest に固定するため、新しいイメージをビルドしただけでは反映されない。ビルド後に次を流して新リビジョン／新実行に切り替える。スキーマ変更を含む更新でサービスが旧スキーマの DB を掴まないよう、migrate を先に更新・実行してからサービスを切り替えること:
+
+```bash
+gcloud run jobs update migrate --image="$IMAGE" --region="$REGION"
+gcloud run jobs execute migrate --region="$REGION" --wait
+gcloud run services update skillhub --image="$IMAGE" --region="$REGION"
+gcloud run jobs update librarian --image="$IMAGE" --region="$REGION"
+```
 
 ---
 
