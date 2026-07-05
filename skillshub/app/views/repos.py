@@ -161,12 +161,13 @@ def _kind(repo: str) -> str:
     return "org" if not repo else "repo"
 
 
-@st.cache_data(ttl=300, persist="disk", show_spinner="エージェントの閲覧範囲を取得中…")
+@st.cache_data(ttl=300, show_spinner="エージェントの閲覧範囲を取得中…")
 def _github_scope() -> dict[str, list[str]]:
     """App の閲覧範囲（選択肢）。GitHub API を毎リロードで叩かないよう短時間キャッシュする。
 
-    ``persist="disk"`` でプロセス再起動をまたいで保持し、起動直後の初回表示が
-    数秒のスピナーでブロックされる（画面が段階的に組み上がって見える）のを避ける。
+    ``persist="disk"`` は併用しない。Streamlit は persist 指定時に ttl を無視するため、
+    キャッシュが永久に残り、新しく作られたリポジトリが候補に出てこなくなる。
+    代償として起動直後の初回表示は取得スピナー（数秒）でブロックされる。
     """
     return services.list_github_scope()
 

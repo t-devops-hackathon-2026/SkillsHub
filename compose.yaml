@@ -1,7 +1,7 @@
 # ローカル開発用 DB（pgvector 入り PostgreSQL）
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: skillhub_user
       POSTGRES_PASSWORD: password
@@ -11,7 +11,9 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - skillhub_pgdata:/var/lib/postgresql/data
+      # PostgreSQL 18 のイメージはデータ配置が変わり、/var/lib/postgresql/data ではなく
+      # /var/lib/postgresql にマウントする（data 側に mount すると起動時にエラーで落ちる）。
+      - skillhub_pgdata:/var/lib/postgresql
       - ./skillshub/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U skillhub_user -d skillhub"]
