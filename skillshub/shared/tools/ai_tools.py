@@ -41,7 +41,9 @@ EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM = 768
 
 # 検索の推薦理由（why）生成に使う既定モデル。仕様の「Flash 既定 / 重い推論のみ Pro」に従い Flash。
-SEARCH_REASON_MODEL = "gemini-3-flash"
+# ID は Gemini API と Vertex AI の両方に存在するものを使うこと（gemini-3-flash は
+# Vertex AI に存在せず、本番デプロイ（Vertex 経由）で 404 になる）。
+SEARCH_REASON_MODEL = "gemini-3.5-flash"
 
 # テキスト → ベクトルの関数型。既定は Vertex AI だが、テストでは決定論的な
 # フェイクを差し込めるように注入可能にしておく（dependency injection）。
