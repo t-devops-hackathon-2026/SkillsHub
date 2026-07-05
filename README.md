@@ -32,7 +32,7 @@ uv run python -c "from skillshub.shared.db import get_session; s=next(get_sessio
 
 ### Gemini の認証
 
-LLM・埋め込みの呼び出しは google-genai SDK 経由で、認証は環境変数で切り替わる。ローカルでは `.env` に `GOOGLE_API_KEY`（Gemini API キー）を設定するのが手軽。デプロイ環境では API キーを使わず、`GOOGLE_GENAI_USE_VERTEXAI=TRUE`・`GOOGLE_CLOUD_PROJECT`・`GOOGLE_CLOUD_LOCATION` を設定してサービスアカウントの ADC で Vertex AI を呼ぶ。
+LLM・埋め込みの呼び出しは google-genai SDK 経由で、認証は環境変数で切り替わる。ローカルでは `.env` に `GOOGLE_API_KEY`（Gemini API キー）を設定するのが手軽。デプロイ環境では API キーを使わず、`GOOGLE_GENAI_USE_VERTEXAI=TRUE`・`GOOGLE_CLOUD_PROJECT`・`GOOGLE_CLOUD_LOCATION` を設定してサービスアカウントの ADC で Vertex AI を呼ぶ。`GOOGLE_CLOUD_LOCATION` は `global` を指定する（Gemini 3 系モデルは global エンドポイントのみの提供で、asia-northeast1 等のリージョン指定では 404 になるため）。
 
 ### 公開デプロイ時のアクセス制限
 
@@ -117,7 +117,7 @@ gcloud run deploy skillhub \
   --service-account="streamlit-sa@$PROJECT_ID.iam.gserviceaccount.com" \
   --vpc-connector=skillshub-connector \
   --set-secrets=DATABASE_URL=DATABASE_URL:latest,APP_PASSWORD=app-password:latest,GITHUB_APP_ID=github-app-id:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest \
-  --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION="$REGION",SEED_DEMO_SKILLS=0 \
+  --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION=global,SEED_DEMO_SKILLS=0 \
   --allow-unauthenticated \
   --min-instances=0 --max-instances=1 \
   --memory=1Gi
@@ -136,7 +136,7 @@ gcloud run jobs create librarian \
   --service-account="librarian-sa@$PROJECT_ID.iam.gserviceaccount.com" \
   --vpc-connector=skillshub-connector \
   --set-secrets=DATABASE_URL=DATABASE_URL:latest,GITHUB_APP_ID=github-app-id:latest,GITHUB_APP_PRIVATE_KEY=github-app-private-key:latest \
-  --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION="$REGION" \
+  --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT="$PROJECT_ID",GOOGLE_CLOUD_LOCATION=global \
   --task-timeout=30m
 
 gcloud run jobs execute librarian --region="$REGION" --wait
