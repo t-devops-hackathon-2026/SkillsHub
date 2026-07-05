@@ -20,7 +20,9 @@ from google.genai import types
 
 from skillshub.shared.schemas import AnalyzedSkill, RawSkill, UpdateDraft
 
-MODEL = "gemini-3-flash"
+# ID は Gemini API と Vertex AI の両方に存在するものを使うこと（gemini-3-flash は
+# Vertex AI に存在せず、本番デプロイ（Vertex 経由）で 404 になる）。
+MODEL = "gemini-3.5-flash"
 
 _APP_NAME = "skillshub-librarian"
 _USER_ID = "librarian"
