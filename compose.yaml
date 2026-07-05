@@ -3,9 +3,9 @@ services:
   db:
     image: pgvector/pgvector:pg18
     environment:
-      POSTGRES_USER: skillhub_user
+      POSTGRES_USER: skillshub_user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: skillhub
+      POSTGRES_DB: skillshub
     # ホスト側はローカルにインストール済みの PostgreSQL（既定 5432）との衝突を避けて 5433。
     # コンテナ内部は 5432。接続は .env の DATABASE_URL（127.0.0.1:5433）で行う。
     ports:
@@ -13,13 +13,13 @@ services:
     volumes:
       # PostgreSQL 18 のイメージはデータ配置が変わり、/var/lib/postgresql/data ではなく
       # /var/lib/postgresql にマウントする（data 側に mount すると起動時にエラーで落ちる）。
-      - skillhub_pgdata:/var/lib/postgresql
+      - skillshub_pgdata:/var/lib/postgresql
       - ./skillshub/db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U skillhub_user -d skillhub"]
+      test: ["CMD-SHELL", "pg_isready -U skillshub_user -d skillshub"]
       interval: 5s
       timeout: 5s
       retries: 5
 
 volumes:
-  skillhub_pgdata:
+  skillshub_pgdata:
