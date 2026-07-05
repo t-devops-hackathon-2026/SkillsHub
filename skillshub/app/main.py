@@ -12,7 +12,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from skillshub.app.views import dashboard, detail, repos, search, suggestions
-from skillshub.app.views.components import inject_github_style
+from skillshub.app.views.components import inject_github_style, to_jst
 from skillshub.shared import services
 
 _SAMPLES_ROOT = Path(__file__).resolve().parents[2] / "samples"
@@ -163,7 +163,7 @@ def _render_agent_panel() -> None:
     """同期の実行と最終同期時刻の表示（デモのヘッダー右側に相当）。"""
     repositories = services.list_repositories()
     last_times = [t for r in repositories if isinstance(t := r["last_collected_at"], datetime)]
-    last_label = max(last_times).strftime("%Y-%m-%d %H:%M") if last_times else "未同期"
+    last_label = to_jst(max(last_times)).strftime("%Y-%m-%d %H:%M") if last_times else "未同期"
 
     if st.button("今すぐ同期", key="sync_all", use_container_width=True):
         _run_sync(repositories)
@@ -241,20 +241,23 @@ def _run_sync(repositories: list[dict[str, object]]) -> None:
     st.toast(f"同期が完了しました（成功 {ok} / 失敗 {failed}）", icon=":material/check_circle:")
 
 
+@st.dialog("初期状態に戻す")
+def _confirm_reset_dialog() -> None:
+    """全データを seed 直後の状態に戻す確認ダイアログ（ハッカソンのデモやり直し用）。"""
+    st.markdown("登録リポジトリ・収集済み Skill・提案・検索履歴をすべて削除し、デモ用の初期データに戻します。")
+    if st.button("リセットを実行", key="demo_reset_confirm", use_container_width=True):
+        services.reset_demo_data()
+        st.cache_data.clear()
+        st.session_state.clear()
+        st.toast("初期状態に戻しました")
+        st.rerun()
+
+
 def _render_reset_panel() -> None:
-    """全データを seed 直後の状態に戻す危険操作（ハッカソンのデモやり直し用）。"""
-    with (
-        st.container(key="demo_reset_area"),
-        st.popover("初期状態に戻す（ハッカソン用）", use_container_width=True),
-    ):
-        st.markdown("登録リポジトリ・収集済み Skill・提案・検索履歴をすべて削除し、デモ用の初期データに戻します。")
-        st.caption("ハッカソンで同期の挙動を確認したい時に自由にお使いください。")
-        if st.button("リセットを実行", key="demo_reset_confirm", use_container_width=True):
-            services.reset_demo_data()
-            st.cache_data.clear()
-            st.session_state.clear()
-            st.toast("初期状態に戻しました")
-            st.rerun()
+    with st.container(key="demo_reset_area"):
+        if st.button("初期状態に戻す（ハッカソン用）", key="demo_reset_open", use_container_width=True):
+            _confirm_reset_dialog()
+        st.caption("全データをデモ用の初期状態に戻します。ハッカソン期間中は自由に押して問題ありません。")
 
 
 def _render_content() -> None:

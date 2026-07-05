@@ -18,19 +18,24 @@ _UPDATE_STATUS_OPTIONS: dict[str, str] = {
 
 def _render_agent_bar() -> None:
     st.markdown('<div class="sh-ai-eyebrow">✦ エージェントに聞く</div>', unsafe_allow_html=True)
-    col1, col2 = st.columns([6, 1])
-    with col1:
-        query = st.text_input(
-            "エージェントバー",
-            placeholder="Skillsをここから探せます（例：議事録を要約して担当者別のタスクに分けたい）",
-            label_visibility="collapsed",
-            key="agent_bar_query",
-        )
-    with col2:
-        if st.button("探す", use_container_width=True, key="agent_bar_submit") and query:
-            st.session_state.pending_search_query = query
-            st.session_state.current_view = "search"
-            st.rerun()
+    # Enter/Return キーでも検索できるよう form で包む（enter_to_submit が既定で有効）。
+    # form 自体には key クラスが付かないため、CSS で狙えるよう keyed container で包む。
+    # form のカード枠と「Press Enter to submit form」ヒントは CSS（st-key-agent_bar_box）で消す。
+    with st.container(key="agent_bar_box"), st.form("agent_bar_form", border=False):
+        col1, col2 = st.columns([6, 1])
+        with col1:
+            query = st.text_input(
+                "エージェントバー",
+                placeholder="Skillsをここから探せます（例：議事録を要約して担当者別のタスクに分けたい）",
+                label_visibility="collapsed",
+                key="agent_bar_query",
+            )
+        with col2:
+            submitted = st.form_submit_button("探す", use_container_width=True)
+    if submitted and query:
+        st.session_state.pending_search_query = query
+        st.session_state.current_view = "search"
+        st.rerun()
 
 
 def _render_summary_cards() -> None:

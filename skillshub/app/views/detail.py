@@ -11,7 +11,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from skillshub.app.views.components import tag_chip, update_status_badge
+from skillshub.app.views.components import tag_chip, to_jst, update_status_badge
 from skillshub.app.views.suggestions import render_suggestion_card
 from skillshub.shared import services
 from skillshub.shared.schemas import SkillDetail
@@ -61,7 +61,7 @@ def _render_header(detail: SkillDetail) -> None:
         else html.escape(source_label)
     )
     last_updated: datetime | None = skill.last_updated or skill.updated_at
-    updated_label = last_updated.strftime("%Y-%m-%d") if last_updated else "不明"
+    updated_label = to_jst(last_updated).strftime("%Y-%m-%d") if last_updated else "不明"
     author = html.escape(skill.author or "不明")
     st.markdown(
         f'<div style="font-size:13px;color:#59636e;display:flex;gap:16px;flex-wrap:wrap">'
