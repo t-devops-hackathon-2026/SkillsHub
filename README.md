@@ -74,7 +74,7 @@ IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/skillshub/app:latest
 
 # API 有効化
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
-  aiplatform.googleapis.com secretmanager.googleapis.com
+  aiplatform.googleapis.com secretmanager.googleapis.com cloudscheduler.googleapis.com
 
 # 実行 SA に Vertex AI 呼び出しと Secret 参照の権限を付与
 for SA in streamlit-sa librarian-sa; do
@@ -147,9 +147,40 @@ gcloud run jobs create librarian \
 gcloud run jobs execute librarian --region="$REGION" --wait
 ```
 
-司書 Job にも `SEED_DEMO_SKILLS=0` を渡すのは、DB 巡回モードがローカル完走用に自動登録する `local/samples`（イメージ同梱のデモ Skill）を本番に取り込まないため。日次の自動実行（Cloud Scheduler からのキック）は #23 で設定する。
+司書 Job にも `SEED_DEMO_SKILLS=0` を渡すのは、DB 巡回モードがローカル完走用に自動登録する `local/samples`（イメージ同梱のデモ Skill）を本番に取り込まないため。
 
-### 5. 動作確認
+### 5. Cloud Scheduler（日次自動実行）
+
+Cloud Scheduler で司書 Job を毎日 03:00 JST に自動キックする。Scheduler が Cloud Run Jobs API を叩くため、`librarian-sa` に `roles/run.invoker` を追加で付与する。
+
+```bash
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:librarian-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/run.invoker"
+
+gcloud scheduler jobs create http librarian-daily \
+  --schedule="0 3 * * *" \
+  --time-zone="Asia/Tokyo" \
+  --uri="https://$REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT_ID/jobs/librarian:run" \
+  --http-method=POST \
+  --oauth-service-account-email="librarian-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --location="$REGION"
+```
+
+作成後、手動トリガーで動作確認する:
+
+```bash
+gcloud scheduler jobs run librarian-daily --location="$REGION"
+```
+
+Cloud Logging で構造化ログ（収集数・失敗数）を確認する:
+
+```bash
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="librarian"' \
+  --project="$PROJECT_ID" --limit=20 --format=json
+```
+
+### 6. 動作確認
 
 サービス URL をブラウザで開き、パスワードゲート → ダッシュボード表示を確認する。画面から収集元を追加して「今すぐ同期」を実行するか、`librarian` Job を手動 execute して、収集された Skill がダッシュボードに並べば疎通完了。
 
