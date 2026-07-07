@@ -7,7 +7,7 @@ AI エージェントが「司書」として Skills の鮮度を維持し続け
 
 ## アーキテクチャ
 
-![アーキテクチャ図](docs/designs/overview/architecture.png)
+<img src="docs/designs/overview/architecture.png" alt="アーキテクチャ図" width="800" />
 
 ## 主な機能
 
