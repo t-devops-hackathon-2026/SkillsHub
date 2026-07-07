@@ -106,7 +106,7 @@ gcloud run jobs update librarian --image="$IMAGE" --region="$REGION"
 - Secret Manager: `db-password`（実値投入済み）、`github-app-private-key` / `github-app-id`
 - Artifact Registry: `asia-northeast1-docker.pkg.dev/<PROJECT_ID>/skillshub`
 - VPC コネクタ: `skillshub-conn`（READY）
-- Cloud SQL: インスタンス `skillhub-pg`（PostgreSQL 16 / private IP のみ / pgvector 有効）
+- Cloud SQL: インスタンス `skillhub-pg`（PostgreSQL 18系 / private IP のみ / pgvector 有効）
 
 ### staging DB への一時接続手順
 
