@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import threading
 import time
-from dataclasses import dataclass
 from datetime import datetime
 
 import streamlit as st
@@ -11,33 +9,6 @@ from skillshub.app.views.components import to_jst
 from skillshub.shared import services
 
 _MSG_KEY = "repos_flash_message"
-_GO_DASH_KEY = "repos_go_dashboard"
-
-
-@dataclass
-class _SyncJob:
-    """バックグラウンドスレッドで実行中/完了した収集ジョブ。"""
-
-    repo_id: str
-    display_name: str
-    kind: str
-    owner: str
-    thread: threading.Thread | None = None
-    result: object | None = None
-    error: Exception | None = None
-
-
-# st.session_state は別スレッドから安全に触れないため、ジョブ管理はモジュールレベルの
-# 素の dict で行う（ハッカソン用の単一プロセス運用が前提）。
-# collect_org/collect_repo は GitHub API 取得＋AI 埋め込みで数十秒〜それ以上ブロックする。
-# これを Streamlit のスクリプト実行と同じスレッドで呼ぶと、ブロック中の接続切断・再接続時に
-# 途中描画と再接続後の描画が混在して行が二重表示される不具合が起きるため、
-# バックグラウンドスレッドで実行しポーリングで完了を待つ。
-_SYNC_JOBS: dict[str, _SyncJob] = {}
-# 「実行中か確認 → dict へ登録」を1操作として保護するロック。
-# 別セッション（別タブ/同時クリック）が同じ repo_id に対してほぼ同時に「今すぐ収集」を
-# 押すと、ロックなしでは両方が「未実行」と判定して収集処理を二重起動しうるため必須。
-_SYNC_JOBS_LOCK = threading.Lock()
 
 _KIND_ORG_BADGE = (
     '<span style="background:#fbefff;color:#8250df;font-size:11px;font-weight:600;'
@@ -48,89 +19,12 @@ _KIND_REPO_BADGE = (
     'padding:2px 8px;border-radius:2em;white-space:nowrap">repo</span>'
 )
 
-_COL_WIDTHS = [3.5, 1, 2, 0.8, 1.5, 1.2]
-_COL_HEADERS = ["対象", "種別", "最終収集", "Skills 数", "状態", ""]
+_COL_WIDTHS = [3.5, 1, 2, 0.8, 1.5]
+_COL_HEADERS = ["対象", "種別", "最終収集", "Skills 数", "状態"]
 
 
-def _set_flash(level: str, text: str, go_dashboard: bool = False) -> None:
+def _set_flash(level: str, text: str) -> None:
     st.session_state[_MSG_KEY] = {"level": level, "text": text}
-    if go_dashboard:
-        st.session_state[_GO_DASH_KEY] = True
-
-
-def _collect_worker(job: _SyncJob) -> None:
-    """バックグラウンドスレッドの実行本体。Streamlit API は一切呼ばない。"""
-    try:
-        if job.kind == "org":
-            job.result = services.collect_org(job.owner)
-        else:
-            job.result = services.collect_repo(job.repo_id)
-    except Exception as exc:  # noqa: BLE001 — スレッド側で捕捉し、完了後に UI 側で表示する
-        job.error = exc
-
-
-def _start_sync(repo_id: str, display_name: str, kind: str, owner: str) -> None:
-    """収集をバックグラウンドスレッドで開始する（同じ対象が実行中なら何もしない）。"""
-    with _SYNC_JOBS_LOCK:
-        if repo_id in _SYNC_JOBS:
-            return
-        job = _SyncJob(repo_id=repo_id, display_name=display_name, kind=kind, owner=owner)
-        job.thread = threading.Thread(target=_collect_worker, args=(job,), daemon=True)
-        _SYNC_JOBS[repo_id] = job
-        # dict 登録とスレッド起動を同じロック内で行う。ロックの外で start() すると、
-        # 登録済みだが未起動（is_alive() が False）の一瞬を _sync_poller が「完了」と
-        # 誤判定しうるため。
-        job.thread.start()
-
-
-def _finish_job(job: _SyncJob) -> None:
-    """完了したジョブの結果からフラッシュメッセージをセットする。"""
-    if job.error is not None:
-        _set_flash("error", f"**{job.display_name}** の収集に失敗しました。\n{job.error}")
-        return
-
-    if job.kind == "org":
-        result = job.result
-        assert isinstance(result, services.OrgCollectResult)
-        if result.failed_repos:
-            _set_flash(
-                "warning",
-                f"**{job.owner}** の収集が一部失敗しました。"
-                f"　取得: {result.collected_skills} 件　／　失敗: {', '.join(result.failed_repos)}",
-                go_dashboard=True,
-            )
-        else:
-            _set_flash(
-                "success",
-                f"**{job.owner}** Org の収集が完了しました。"
-                f"　取得: {result.collected_skills} 件　／　スキップ: {result.skipped_skills} 件",
-                go_dashboard=True,
-            )
-    else:
-        result_repo = job.result
-        assert isinstance(result_repo, dict)
-        _set_flash(
-            "success",
-            f"**{job.display_name}** の収集が完了しました。"
-            f"　取得: {result_repo['collected_skills']} 件　／　スキップ: {result_repo['skipped_skills']} 件",
-            go_dashboard=True,
-        )
-
-
-@st.fragment(run_every="1.5s")
-def _sync_poller() -> None:
-    """バックグラウンド収集ジョブの完了を監視し、完了したら全体を再描画する。
-
-    このフラグメント自体は何も描画しない（対象行のボタン表示だけで状態を示す）。
-    """
-    with _SYNC_JOBS_LOCK:
-        finished = [job for job in _SYNC_JOBS.values() if job.thread is not None and not job.thread.is_alive()]
-        for job in finished:
-            _SYNC_JOBS.pop(job.repo_id, None)
-    for job in finished:
-        _finish_job(job)
-    if finished:
-        st.rerun()
 
 
 def _render_flash() -> None:
@@ -138,12 +32,6 @@ def _render_flash() -> None:
     msg = st.session_state.pop(_MSG_KEY, None)
     if msg is not None:
         getattr(st, msg["level"])(msg["text"])
-
-    # 収集完了後: 「ダッシュボードで確認」ボタンをクリックされるまで表示し続ける
-    if st.session_state.get(_GO_DASH_KEY) and st.button("ダッシュボードで確認 →", type="primary", key="go_dash_btn"):
-        st.session_state.pop(_GO_DASH_KEY, None)
-        st.session_state.current_view = "dashboard"
-        st.rerun()
 
 
 def _kind(repo: str) -> str:
@@ -279,7 +167,7 @@ def _render_register_form() -> None:
     try:
         services.get_or_create_repository(owner, repo)
         display_name = owner if is_org else f"{owner}/{repo}"
-        # 収集は一覧の各行「今すぐ収集」またはサイドバーの「今すぐ同期」から実行する
+        # 収集はサイドバーの「今すぐ同期」または司書の定期バッチから実行する
         _set_flash("success", f"**{display_name}** を登録しました。")
         st.rerun()
     except Exception as exc:
@@ -341,9 +229,6 @@ def _render_repo_table() -> None:
             last_at = r["last_collected_at"] if isinstance(r["last_collected_at"], datetime) else None
             skill_count = int(str(r["skill_count"]))
 
-        is_syncing_row = repo_id in _SYNC_JOBS
-
-        clicked = False
         with st.container(border=True, key=f"repo_box_{repo_id}"):
             last_str = to_jst(last_at).strftime("%Y-%m-%d %H:%M") if last_at else "未収集"
             badge = _KIND_ORG_BADGE if kind == "org" else _KIND_REPO_BADGE
@@ -359,25 +244,6 @@ def _render_repo_table() -> None:
             row[2].caption(last_str)
             row[3].caption(str(skill_count))
             row[4].markdown(status_html, unsafe_allow_html=True)
-            # 擬似 owner（local samples / 手動登録の置き場）は GitHub に実在しないため
-            # 「今すぐ収集」を出さない（collect_repo が installation 取得の 404 で落ちる）。
-            if owner not in services.PSEUDO_OWNERS:
-                if is_syncing_row:
-                    row[5].button(
-                        "同期中...",
-                        key=f"collect_{repo_id}",
-                        use_container_width=True,
-                        disabled=True,
-                        icon=":material/progress_activity:",
-                    )
-                else:
-                    clicked = row[5].button("今すぐ収集", key=f"collect_{repo_id}", use_container_width=True)
-            else:
-                row[5].caption("収集対象外")
-
-        if clicked:
-            _start_sync(repo_id, display_name, kind, owner)
-            st.rerun()
 
 
 def render() -> None:
@@ -404,7 +270,3 @@ def render() -> None:
 
         st.write("")
         _render_repo_table()
-
-        # 実行中のジョブがあるときだけポーリングする（無いときは無駄な自動再実行をしない）。
-        if _SYNC_JOBS:
-            _sync_poller()
