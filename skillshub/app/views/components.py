@@ -188,9 +188,10 @@ section.main [data-testid="stFormSubmitButton"] button[kind="primary"]:hover{
 .sh-login-head{display:flex;flex-direction:column;align-items:center;gap:12px;
   margin:11vh 0 20px;text-align:center}
 .sh-login-head .sh-mark{width:48px;height:48px;border-radius:12px;font-size:24px;
-  background:var(--gh-grad);box-shadow:var(--gh-shadow-2)}
+  background:var(--gh-ink);box-shadow:var(--gh-shadow-2)}
 .sh-login-title{font-size:1.3rem;font-weight:600;color:var(--gh-ink)}
-.sh-login-sub{font-size:.85rem;color:var(--gh-muted)}
+.sh-login-sub{font-size:.85rem;color:var(--gh-muted);line-height:1.6}
+.sh-login-note{font-size:.78rem;color:var(--gh-muted)}
 [class*="st-key-login_card"] [data-testid="stForm"]{
   background:var(--gh-card);border:1px solid var(--gh-line);border-radius:8px;
   padding:1.3rem 1.3rem 1.1rem;box-shadow:var(--gh-shadow),var(--gh-shadow-2)}

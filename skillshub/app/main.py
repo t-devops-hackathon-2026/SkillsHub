@@ -81,7 +81,8 @@ def _check_password() -> bool:
             '<div class="sh-login-head">'
             '<span class="sh-mark">S</span>'
             '<div class="sh-login-title">SkillsHub にログイン</div>'
-            '<div class="sh-login-sub">パスワードを入力してください</div>'
+            '<div class="sh-login-sub">パスワードを入力してください'
+            '<br><span class="sh-login-note">※提出ページのストーリーの一行目に書いてあります</span></div>'
             "</div>",
             unsafe_allow_html=True,
         )
@@ -278,7 +279,9 @@ def _render_content() -> None:
         dashboard.render()
 
 
-st.set_page_config(page_title="SkillsHub", page_icon=":material/local_library:", layout="wide")
+_FAVICON = str(Path(__file__).resolve().parent / "assets" / "favicon.svg")
+
+st.set_page_config(page_title="SkillsHub", page_icon=_FAVICON, layout="wide")
 inject_github_style()
 if _check_password():
     _init_session_state()
