@@ -63,7 +63,7 @@ def seed_into(session: Session) -> None:
     migrate 経由でもリセットボタン経由でも本番にデモ Skill が入らないようにする。
     """
     # 収集デモ用の空リポジトリ（Skill を持たない）。実在リポジトリなので常に投入する。
-    _get_or_create_repository(session, owner="t-devops-hackathon-2026", repo="ai-agent", install_id=None)
+    _get_or_create_repository(session, owner="t-devops-hackathon-2026", repo="SkillsHub", install_id=None)
 
     if not _should_seed_demo_skills():
         return

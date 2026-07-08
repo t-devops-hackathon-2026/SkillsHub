@@ -416,6 +416,6 @@ def test_reset_demo_data_restores_seed_state(db_session: Session, monkeypatch: p
     services.reset_demo_data()
 
     repos = {(r.owner, r.repo) for r in db_session.scalars(select(Repository)).all()}
-    assert repos == {("internal", "manual-skills"), ("t-devops-hackathon-2026", "ai-agent")}
+    assert repos == {("internal", "manual-skills"), ("t-devops-hackathon-2026", "SkillsHub")}
     assert {s.name for s in db_session.scalars(select(Skill)).all()} == {"議事録要約 Skill", "タスク抽出 Skill"}
     assert db_session.scalars(select(Suggestion)).all() == []
