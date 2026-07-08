@@ -97,14 +97,16 @@ gcloud run jobs update librarian --image="$IMAGE" --region="$REGION"
 
 ## インフラ構成（staging）
 
-- プロジェクト: `t-skillshub-staging`（`asia-northeast1`）
+実際のプロジェクト ID はチーム共有情報を参照し、`<PROJECT_ID>` を置き換えて読むこと。
+
+- プロジェクト: `<PROJECT_ID>`（`asia-northeast1`）
 - サービスアカウント
-  - `streamlit-sa@t-skillshub-staging.iam.gserviceaccount.com` — Streamlit / Cloud Run service
-  - `librarian-sa@t-skillshub-staging.iam.gserviceaccount.com` — 司書バッチ / Cloud Run Jobs
+  - `streamlit-sa@<PROJECT_ID>.iam.gserviceaccount.com` — Streamlit / Cloud Run service
+  - `librarian-sa@<PROJECT_ID>.iam.gserviceaccount.com` — 司書バッチ / Cloud Run Jobs
 - Secret Manager: `db-password`（実値投入済み）、`github-app-private-key` / `github-app-id`
-- Artifact Registry: `asia-northeast1-docker.pkg.dev/t-skillshub-staging/skillshub`
+- Artifact Registry: `asia-northeast1-docker.pkg.dev/<PROJECT_ID>/skillshub`
 - VPC コネクタ: `skillshub-conn`（READY）
-- Cloud SQL: インスタンス `skillhub-pg`（PostgreSQL 16 / private IP `10.28.0.3` / pgvector 有効）
+- Cloud SQL: インスタンス `skillhub-pg`（PostgreSQL 18系 / private IP のみ / pgvector 有効）
 
 ### staging DB への一時接続手順
 
@@ -113,7 +115,7 @@ gcloud run jobs update librarian --image="$IMAGE" --region="$REGION"
 gcloud sql instances patch skillhub-pg --assign-ip --quiet
 
 # Auth Proxy を起動（別ターミナル）
-cloud-sql-proxy t-skillshub-staging:asia-northeast1:skillhub-pg --port 5432
+cloud-sql-proxy <PROJECT_ID>:asia-northeast1:skillhub-pg --port 5432
 
 # psql で接続
 PGPASSWORD="$(gcloud secrets versions access latest --secret=db-password)" \
